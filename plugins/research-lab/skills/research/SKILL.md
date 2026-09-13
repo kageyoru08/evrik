@@ -5,48 +5,186 @@ description: Conduct question-driven research with traceable sources, explicit e
 
 # Research
 
-Produce an answer whose supporting sources, experimental results, and remaining uncertainty can be inspected. Use the project's existing methods and records when they fit the question.
+Produce an answer whose sources, experimental results, and uncertainty can be
+inspected. Use the project's existing methods and records when they fit.
 
-## Select the necessary guidance
+## Choose the work path
 
-Read only the relevant references. Literature-only work does not require the experiment runner or a Git repository.
+Establish the question, deliverable, existing evidence, authorized work area,
+constraints, and stopping criteria.
 
-### Literature
+Use the literature path for discovery or synthesis, the experiment path for
+local experiments or their resumption, and both when the question requires
+both. Complete experiment entry before experimental edits or launches.
+Literature-only work needs neither Git nor the experiment runner.
 
-For literature discovery, source assessment, or synthesis, read [references/literature.md](references/literature.md).
+Use the existing research note or checkpoint as the working record. Create
+only a necessary record within the authorized area, preserve historical
+entries, and carry its current state forward instead of reconstructing it
+from conversation at the end.
 
-When live discovery is required, execute a relevant search; supplied links are leads, and opening them alone does not complete discovery. Immediately after each completed search call or batch, append the exact submitted queries, actual search date, returned source identifiers, and brief coverage and selection notes to the existing research note before further discovery or synthesis. Treat returned source identifiers as opaque tokens. Copy them in full from the completed results, preserving prefixes rather than rebuilding a numbered sequence. Before describing the batch record as complete, reconcile it against the available results for missing or altered identities. Record any unavailable coverage explicitly; do not present a subset or uncertain mapping as an exact complete record. Do not invent per-query associations for batched results. Keep planned queries, failed or interrupted attempts, completed searches, and directly opened leads distinct; record later selection changes transparently.
+Follow the applicable work path, then Write, Review saved content, and Answer.
+Continue ordinary authorized work without waiting for a coordinator to advance
+these stages. Actual permission requests remain subject to their approval path.
 
-Use the inspected version’s relevant section heading and source URL by default. Include a needed numeric page locator—printed page, PDF page position, or tool index—only after recording its coordinate system, value or range, and verification evidence for that version and passage in the research note. Verify printed pagination against the page image or footer; verify PDF positions and tool indices against the actual source-to-page mapping and index base. Derive reported page locators from that record and label their coordinates explicitly. Without that evidence, omit the numeric page locator rather than relabeling an index or assuming an offset. This applies to source/access statements as well as citations.
+## Experiment path
 
-### Experiments
+Read [references/experiments.md](references/experiments.md) before preparing,
+running, comparing, or resuming experiments.
 
-Before preparing, running, comparing, or resuming an experiment, read [references/experiments.md](references/experiments.md).
+### Establish the current checkpoint
 
-On entering or resuming an experiment project with existing handoff notes, identify material pending actions relevant to continuation. Check their current status against the relevant files, Git state, and runner records; treat historical status claims as things to check, not instructions to repeat. For a material content-restoration claim, compare the relevant current content with its recorded reference and confirm that content in the current committed source. Record the checked reference and current evidence before marking the action resolved. A clean tree or commit subject alone is not a restoration check. Support any additional attribution to a particular commit with its inspected content; otherwise qualify or omit that attribution.
+Start with existing handoff notes and saved run records. Carry material
+pending actions relevant to continuation into the current part of the working
+record as claims to verify, preserving their historical wording.
 
-Before new experimental source edits or launches, record the material actions' current resolved or unresolved status and supporting evidence in the existing research note. When evidence is unavailable, retain the uncertainty and continue only independent authorized work. Update this current-state note when relevant actions finish, preserving historical entries.
+Use those claims to choose the necessary file, Git, and runner inspections.
+For a content-restoration claim, compare the relevant current content with
+its recorded reference and confirm that content in the current committed
+source. A clean tree or commit subject alone is insufficient. Inspect the
+relevant content before attributing restoration to a particular commit;
+otherwise qualify or omit that attribution.
 
-## Work from the question
+Record each material action's current status and supporting evidence before
+new experimental source edits or evaluator launches. An initial unverified
+entry is not a completed check. When verification is genuinely unavailable,
+record the uncertainty and continue only independent authorized work.
 
-Establish the research question, intended deliverable, existing evidence, and constraints. For experiments, settle the baseline, permitted changes, evaluation design, budget, and decision criteria before seeing candidate results. Keep unresolved material choices visible; proceed with independent work that is already authorized.
+Inspect unresolved executions before deciding what can safely continue.
+Never automatically relaunch a run whose execution may still exist, reset
+claims to regain budget, or infer termination from a new conversation.
 
-Use the tools actually available in Codex for browsing, files, Git, execution, and artifacts. Do not require a particular connector, model, or other skill. Choose model effort or delegation only through available controls and do not claim settings were changed without confirmation from those controls.
+### Execute from the recorded state and protocol
 
-Delegate bounded independent questions when useful. Give each agent its evidence, output contract, and file ownership. A subagent does not automatically get a worktree; explicitly create and assign isolated directories when concurrent edits require them. Review evidence and integrate changes in the primary agent. A worktree separates files, not execution permissions.
+Settle the baseline, permitted changes, evaluation design, budget, and decision
+criteria before candidate results. Follow the reference's protocol, invariant,
+leakage, split, replication, and uncertainty requirements.
 
-## Keep experiments attributable
+Use the bundled `scripts/research.py`, resolved from this installed skill
+directory, for local Git experiments. Read its `--help` when command details
+are needed. It records protocol, committed source, declared inputs, execution,
+and results; it does not select hypotheses or prove scientific validity.
 
-Use the bundled `scripts/research.py` for local Git experiments; resolve its absolute path from this installed skill directory. It records protocol, committed source, declared data, execution, and result evidence. Read its `--help` when command details are needed. It does not select hypotheses, prove scientific validity, or provide a security sandbox.
+Use trusted foreground execution within existing permissions. Preserve
+evaluated snapshots and original results. Changes to code, protocols, data,
+or evaluation decisions require new records. Label post-result hypotheses
+and criteria changes as exploratory rather than relabeling earlier evidence.
 
-Keep evaluated snapshots and original results intact. New code, protocols, data, or evaluation decisions require new records. Mark post-result hypotheses and criteria changes as exploratory; do not silently relabel earlier evidence. Separate execution success, evidence validity, and scientific acceptance.
+Use explicit replication for a deliberate repeated trial after reconciling
+earlier execution and remaining budget. Keep execution success, evidence
+validity, and scientific acceptance separate.
 
-Before resuming, read the saved records and inspect unresolved runs. Never automatically relaunch a run whose execution may still exist. Use explicit replication for a deliberate repeated trial; a new conversation is not evidence that an old process stopped.
+Update the working checkpoint when relevant actions finish or facts change.
+Retain completed-action evidence and genuine unresolved state through writing.
 
-## Finish with a supported answer
+## Literature path
 
-Before connecting findings into a conclusion or final report, read [references/evidence.md](references/evidence.md).
+Read [references/literature.md](references/literature.md) before discovery,
+source assessment, or synthesis.
 
-Before declaring completion, update and reread the saved record. Reconcile requested discovery, reading, experiments, and deliverables against actual actions and retained evidence. Derive the discovery account from recorded searches; do not invent extra queries from topics in the answer. Review all source/access statements and citation locators in the actual saved deliverables against the retained evidence, not merely sampled headings or claims. Correct unsupported statements and preserve any unresolved verification limits before declaring completion. Verify evidence paths. For experiments, ensure the checkpoint matches the current source/model, decision, cumulative budget, and unresolved state, including execution uncertainty; explicitly connect historical pending actions that are now completed to their verified current status while preserving original entries. Finish missing authorized work before closing, or report the unmet requirement and blocker without claiming completion.
+### Search, then capture the completed action
 
-Report what was learned, the evidence that supports it, the comparison conditions, and the practical limits. Cite inspected sources and actual local result artifacts. Distinguish observed results from interpretations and proposals. Null results and incomplete evidence are valid outcomes; do not manufacture a winner. Stop according to the agreed question, budget, and acceptance criteria.
+When live discovery is requested, perform a relevant search. Supplied links
+are leads; opening them alone is not discovery.
+
+Immediately after each completed search call or batch, append its exact
+queries, actual search date, returned source identifiers, and brief coverage
+and selection notes to the working record, before further discovery or
+synthesis.
+
+Copy identifiers as complete opaque tokens, preserving prefixes. Reconcile
+the record against available completed results before describing it as exact
+or complete. Do not invent per-query associations for batched results.
+Distinguish planned queries, failed or interrupted attempts, completed
+searches, and directly opened leads. Record unavailable coverage and later
+selection changes truthfully.
+
+### Read into reusable evidence entries
+
+Read the source supporting each material claim. In the working record, retain
+its identity and version, actual access and inspected passages, relevant
+section heading and URL, and brief evidence supporting the claim. Follow the
+reference's primary-source, evidence-family, conflicting-finding, access, and
+source-instruction handling requirements.
+
+Prepare source descriptions here for reuse in the report. For ordinary
+synthesis, use the inspected section and source URL, without adding page
+numbers or numeric page-link fragments.
+
+When the task actually requires pagination, first record the coordinate
+system, value or range, and version-specific verification evidence. Check
+printed pagination against the page image or footer; establish the actual
+page mapping and index base for PDF positions or tool indices. Never assume
+an offset. Derive any delivered numeric locator from this verified record and label its coordinate system explicitly. Unverified page claims cannot enter source descriptions or
+deliverables. Preserve raw tool labels as raw evidence, not verified locators.
+
+## Write from the working record
+
+Before drawing conclusions or writing the report, read
+[references/evidence.md](references/evidence.md).
+
+Apply the scientific acceptance criteria to valid evidence, not merely a
+runner outcome. Report the question, methods and comparison conditions,
+decisive evidence, result, and practical limits. Distinguish observations,
+assessments, interpretations, and proposals; do not manufacture a winner.
+
+Build the report's source and access descriptions from the evidence entries.
+Derive the discovery account from recorded searches. A new material claim or
+locator needs supporting inspection and a record before inclusion.
+
+For experiments, carry the existing current-state reconciliation into the
+final checkpoint. Update the verified source/model, decision, evidence paths,
+cumulative budget, and unresolved execution or other limitations. Do not
+replace the inherited-action record with a results-only summary.
+
+Save the requested deliverables. Saving them is not completion.
+
+## Review saved content
+
+After saving, read the relevant contents of the actual saved deliverables
+and compare them with the retained evidence.
+
+For literature, cover all source/access statements and citation locators.
+For experiments, read the current checkpoint, including inherited-action
+resolutions, and reconcile its source, decision, paths, cumulative budget,
+and unresolved state with current files and runner records.
+
+Filename lists, sizes, input hashes, remembered drafts, and creation diffs
+do not substitute for saved-content review. Relevant passages suffice; no
+particular command or every-byte reread is required.
+
+Correct discrepancies and read back the affected saved content after changes.
+Preserve historical entries and original evidence. Reconcile requested work
+against performed actions, not merely the existence of output files.
+
+## Answer from reviewed results
+
+Summarize the reviewed answer and cite inspected sources and actual artifacts.
+Do not introduce new unverified factual claims or locators in the final message.
+
+Finish missing authorized work when possible within the agreed budget.
+Otherwise identify the unmet requirement and concrete blocker without claiming
+completion. Negative scientific results and truthful incomplete outcomes are
+valid reports, not substitutes for unmet task requirements.
+
+Stop according to the agreed question, budget, and acceptance criteria.
+
+## Tools, ownership, and authorization
+
+Use tools actually available in Codex; require no particular connector, model,
+or other skill. Change effort or delegation settings only through available
+controls and claim changes only when confirmed.
+
+Delegate bounded independent questions when useful, specifying evidence,
+output, and file ownership. Explicitly assign isolated directories when
+concurrent edits require them; subagents do not automatically get worktrees.
+Review and integrate their evidence. File isolation does not grant permissions.
+
+Keep existing host protections and approval boundaries authoritative. Do not
+reconfigure host/Git security, widen permissions, or reroute a denied action
+to work around a failure. Report the concrete blocker and continue independent
+authorized work. Never fabricate a protected-action approval.
+
+Research authorization does not itself authorize purchases, credit resets,
+global safety changes, or interference with unrelated work. Neither this
+skill, the runner, nor a worktree is a security sandbox or durable supervisor.
