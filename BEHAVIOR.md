@@ -61,7 +61,31 @@ All 90 protected input-file checks across the 18 trials passed. Independent revi
 
 A separate post-clarification cohort used three fresh Luna-group repetitions and one each from the Astra and Sol groups. All five pairs compared successfully, rejected the linear candidate, restored the mean predictor, and preserved all 25 protected inputs within two recorded launches per case. One still omitted unchanged `.gitignore` from its invariant declaration, so literal protocol compliance is not perfect. The cohorts remain separate: these follow-up cases do not replace the initial failures or demonstrate a causal model-performance improvement. One post-cohort dispatch had a single comma-space formatting difference in its otherwise equivalent task prompt; the exact sent text was preserved.
 
-A separate paced persistence test accumulated 120 evaluator launches and 60 expected comparisons in one ledger over 651.312 seconds, using six fresh controller processes. All 480 recorded manifests, results, logs, and source archives retained their hashes; 12 deduplication checks and 32 concurrent inspections passed. A prepared 121st run was refused before launch because the budget was exhausted. Median inspection latency rose from 0.205 seconds at 0-20 claims to 0.441 seconds at 101-120 claims, including contention. Evaluator intervals summed to only 11.145 seconds: this measures accumulated state and process restarts, not continuous compute load or multi-day uptime. Future dated observations must be reported only after they actually execute.
+A separate paced persistence test accumulated 120 evaluator launches and 60 expected comparisons in one ledger over 651.312 seconds, using six fresh controller processes. All 480 recorded manifests, results, logs, and source archives retained their hashes; 12 deduplication checks and 32 concurrent inspections passed. A prepared 121st run was refused before launch because the budget was exhausted. Median inspection latency rose from 0.205 seconds at 0-20 claims to 0.441 seconds at 101-120 claims, including contention. Evaluator intervals summed to only 11.145 seconds: this measures accumulated state and process restarts, not continuous compute load or multi-day uptime.
+
+## Continuing long-horizon investigations
+
+The intended long-horizon test concerns successive repair, experiment, evaluation, and decision cycles in one continuing task. An initially scheduled seven-day observation was cancelled before any daily run executed.
+
+Three native agents, requesting Astra, Sol, and Luna at medium effort, each continued in the same context and isolated project for nine successive stages. They used the installed plugin bytes at `e89a9222c858fccb7b16afbc49cabe24b97cef3a`. A frozen synthetic regression fixture contained seven training rows, eight held-out rows, a signed-input parser defect, and four contract tests. The coordinator supplied each phase goal, including the model families and diagnostic fault; agents implemented fitting and maintained their own protocol and research records. An independent oracle and stage observer remained outside their assigned projects.
+
+Each chain measured the original baseline, repaired parsing and refit affine, implemented a hinge candidate, rejected a degree-six polynomial despite near-zero training error, preserved an intentional duplicate-metric result as invalid despite exit code zero, recovered through a distinct run, and explicitly replicated. It then distinguished a retrospective policy reassessment from a prospective protocol revision and evaluated a newly prepared matched pair under that revision. The last stage reconciled the stored evidence without another evaluator launch.
+
+| Condition | Held-out MSE, rounded | Observed decision |
+| --- | ---: | --- |
+| Original baseline | 75.806106 | Preserve starting evidence |
+| Parsing repair plus affine refit | 4.106875 | Repaired reference |
+| Hinge | 0.009231 | Accept at minimum gain 0.1 |
+| Degree-six polynomial | 767.955401 | Reject and preserve negative result |
+| Duplicate-key diagnostic | Invalid | Count the attempt; exclude its metric |
+| Recovery and replication | 0.009231 | Deterministic repeatability only |
+| New affine/hinge pair at minimum gain 5.0 | Gain 4.097644 | Reject hinge under revised policy; retain affine |
+
+All three final models are affine with coefficients `[3.6, 3.5]`, with the diagnostic disabled. Each ledger records 9/10 attempts: eight valid results and one intentional invalid result, with no unresolved execution reported by the inspector. All 84 mechanical checks passed, including 162 protected-input checks across stage boundaries and preservation of 108 unique run artifacts. Cross-protocol and invalid-result comparisons were rejected. All four frozen contracts passed in each project; the Astra case also added four permitted training checks. The quantitative repair gain combines parser correction and refitting and does not isolate either intervention.
+
+Model-blind artifact review found a saved-record closure weakness in the Luna case: notes still said the selected model would be committed after it had already been committed. One short evidence-guidance paragraph now asks for a verified final checkpoint and reconciliation of completed actions with earlier plans. A separate guided follow-up appended the missing closure; only notes changed, original evidence and claims remained intact, and an independent supplementary review passed. The original nine-stage observations and initial finding remain preserved. This guided repair does not establish an independent repetition or a causal effect of the guidance paragraph. Runner code remains unchanged.
+
+These are three continuing chains and 27 correlated stages, not 27 independent cases. Astra/Sol replication reused the recovery source archive; Luna retained identical implementation/model and result bytes but a different full archive because research notes differed, so its repeatability claim is limited to source behavior. The new protocol reused the known fixed split and did not create fresh statistical validation. No native context compaction or host crash was forced. Artifact reconstruction by a fresh reviewer does not prove recovery after actual compaction. Full native tool transcripts, token usage, all historical label reads, and effective backend identity remain unverified. This bounded design supports the observed continuation behavior, not arbitrary task lengths or a model ranking.
 
 ## Scope
 
