@@ -1,0 +1,421 @@
+"""Audit a committed package; optionally exercise native CLI installation only.
+
+No model turn is sent. Native checks use a new CODEX_HOME, no credentials, and
+an owned local bare Git origin. Keep --work-dir outside the source repository.
+This is an explicit integration command, not part of unittest discovery.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import platform
+import queue
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import tomllib
+import zipfile
+
+
+PLUGIN = "plugins/research-lab/"
+PLUGIN_FILES = {
+    ".codex-plugin/plugin.json", "LICENSE", "skills/research/SKILL.md",
+    "skills/research/agents/openai.yaml", "skills/research/scripts/research.py",
+    "skills/research/references/literature.md",
+    "skills/research/references/experiments.md",
+    "skills/research/references/evidence.md",
+}
+BASELINE = "37bf04427c14c204450cd56576852573cab360b7"
+CLI_VERSION = "codex-cli 0.153.4"
+MARKETPLACE = ".agents/plugins/marketplace.json"
+REPO_FILES = {PLUGIN + name for name in PLUGIN_FILES} | {
+    MARKETPLACE, ".gitattributes", ".gitignore", ".github/workflows/ci.yml",
+    "README.md", "BEHAVIOR.md", "LICENSE", "examples/run_demo.py",
+    "examples/small-regression/.gitignore", "examples/small-regression/data.json",
+    "examples/small-regression/evaluate.py", "examples/small-regression/model.json",
+    "tests/test_research.py", "tests/check_distribution.py", "tests/fault_driver.py",
+    "tests/test_fault_boundaries.py", "tests/test_input_boundaries.py",
+}
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def run(args, *, cwd=None, env=None, check=True, timeout=90):
+    result = subprocess.run(
+        [str(arg) for arg in args], cwd=cwd, env=env, capture_output=True,
+        timeout=timeout, check=False,
+    )
+    if check:
+        require(result.returncode == 0, f"Command failed: {args}\n{result.stderr.decode('utf-8', 'replace')}")
+    return result
+
+
+def git(repo, *args):
+    return run(["git", "-C", repo, *args]).stdout
+
+
+def committed_files(repo, revision):
+    """Read blobs independently of the archive used for the package check."""
+    commit = git(repo, "rev-parse", "--verify", f"{revision}^{{commit}}").decode().strip()
+    files = {}
+    for line in git(repo, "ls-tree", "-rz", commit).split(b"\0"):
+        if not line:
+            continue
+        metadata, raw_name = line.split(b"\t", 1)
+        mode, kind, blob = metadata.decode().split()
+        name = raw_name.decode("utf-8")
+        require(kind == "blob" and mode in {"100644", "100755"}, f"Unsupported package entry: {name}")
+        files[name] = git(repo, "cat-file", "blob", blob)
+    return commit, files
+
+
+def payload(files):
+    values = {name[len(PLUGIN):]: content for name, content in files.items() if name.startswith(PLUGIN)}
+    require(set(values) == PLUGIN_FILES, f"Unexpected plugin inventory: {sorted(set(values) ^ PLUGIN_FILES)}")
+    return values
+
+
+def hashes(files):
+    return {name: sha(content) for name, content in sorted(files.items())}
+
+
+def audit_package(repo, revision, report, work):
+    require(not git(repo, "status", "--porcelain", "--untracked-files=all").strip(), "A clean committed candidate is required")
+    commit, files = committed_files(repo, revision)
+    require(commit == git(repo, "rev-parse", "HEAD").decode().strip(), "Check out the candidate commit before auditing")
+    require(REPO_FILES <= set(files) <= REPO_FILES | {"MATURITY.md"},
+            f"Package inventory changed; review intended files: {sorted(set(files) ^ REPO_FILES)}")
+    checkout = {name: (repo / name).read_bytes() for name in files}
+    require(hashes(checkout) == hashes(files), "Checkout bytes differ from committed Git blobs")
+    archive_bytes = git(repo, "archive", "--format=zip", commit)
+    archive_path = work / "candidate.zip"
+    archive_path.write_bytes(archive_bytes)
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        archived = {item.filename: archive.read(item) for item in archive.infolist() if not item.is_dir()}
+    require(hashes(archived) == hashes(files), "Archive does not match committed Git blobs")
+    plugin = payload(files)
+    manifest = json.loads(plugin[".codex-plugin/plugin.json"])
+    marketplace = json.loads(files[MARKETPLACE])
+    require(manifest["name"] == marketplace["name"] == "research-lab", "Product name mismatch")
+    require(manifest["version"] == "1.0.0", "Plugin version must remain exactly 1.0.0")
+    require(manifest["skills"] == "./skills/" and manifest["license"] == "MIT", "Invalid plugin paths/license")
+    require(not (set(manifest) & {"hooks", "mcpServers", "apps", "commands"}), "Unexpected runtime integration")
+    require(manifest["interface"]["capabilities"] == [], "Unexpected declared capability")
+    require(len(marketplace["plugins"]) == 1 and marketplace["plugins"][0]["name"] == "research-lab", "Expected one plugin")
+    require(marketplace["plugins"][0]["source"] == {"source": "local", "path": "./plugins/research-lab"}, "Invalid marketplace source")
+    require(plugin["LICENSE"] == files["LICENSE"], "Packaged license differs")
+    runner_ast = ast.parse(plugin["skills/research/scripts/research.py"].decode())
+    imports = set()
+    for node in ast.walk(runner_ast):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.add((node.module or "").split(".")[0])
+    require(imports <= sys.stdlib_module_names | {"__future__"}, f"Unexpected runner dependencies: {imports - sys.stdlib_module_names}")
+    skill = plugin["skills/research/SKILL.md"].decode()
+    require(skill.startswith("---\nname: research\n") and "\ndescription: " in skill, "Invalid research skill frontmatter")
+    checked_links = []
+    for name, content in files.items():
+        if not name.endswith(".md"):
+            continue
+        for target in re.findall(r"\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)", content.decode()):
+            if target.startswith("#") or re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+                continue
+            path = target.split("#", 1)[0]
+            resolved = (repo / PurePosixPath(name).parent / path).resolve()
+            require(resolved.is_relative_to(repo), f"Link escapes package: {name}: {target}")
+            relative = resolved.relative_to(repo).as_posix()
+            require(relative in files or any(item.startswith(relative.rstrip("/") + "/") for item in files),
+                    f"Broken relative link: {name}: {target}")
+            checked_links.append({"source": name, "target": target})
+    report["package"] = {
+        "commit": commit, "clean_checkout": True, "archive": str(archive_path),
+        "archive_sha256": sha(archive_bytes), "git_blob_sha256": hashes(files),
+        "plugin_git_blob_sha256": hashes(plugin), "relative_links": checked_links,
+        "metadata_checks": "passed", "version": manifest["version"], "runner_imports": sorted(imports),
+    }
+    return commit, files
+
+
+def codex_binary(requested):
+    executable = Path(requested or shutil.which("codex") or "")
+    require(executable.is_file(), "Install official @openai/codex@0.153.4 or pass --codex")
+    if executable.suffix.lower() == ".exe":
+        return str(executable.resolve())
+    # npm's shim starts a child process. Use its installed native binary so the
+    # app-server process handle also owns the process we close on failure.
+    roots = [executable.parent / "node_modules/@openai/codex", executable.resolve().parent.parent]
+    filename = "codex.exe" if os.name == "nt" else "codex"
+    candidates = {path.resolve() for root in roots if root.is_dir()
+                  for path in root.glob(f"node_modules/@openai/codex-*/vendor/*/bin/{filename}")}
+    if len(candidates) == 1:
+        return str(candidates.pop())
+    require(executable.suffix.lower() not in {".cmd", ".ps1", ".js"}, "Pass the installed native Codex executable with --codex")
+    return str(executable.resolve())
+
+
+def disk_hashes(directory):
+    return {path.relative_to(directory).as_posix(): sha(path.read_bytes())
+            for path in sorted(directory.rglob("*")) if path.is_file()}
+
+
+def loader(cli, env, project, installed, work, label):
+    """Fresh native task + forced skill reload, with no turn/start or model call."""
+    events = []
+    messages = queue.Queue()
+    stderr_path = work / f"{label}-app-server.stderr.txt"
+    with stderr_path.open("w", encoding="utf-8") as stderr:
+        process = subprocess.Popen([cli, "app-server", "--stdio"], cwd=project, env=env,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+                                   text=True, encoding="utf-8")
+        def read_output():
+            for line in process.stdout:
+                messages.put(line)
+            messages.put(None)
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
+        def send(method, params=None, request_id=None):
+            packet = {"method": method}
+            if params is not None:
+                packet["params"] = params
+            if request_id is not None:
+                packet["id"] = request_id
+            events.append({"sent": packet})
+            process.stdin.write(json.dumps(packet) + "\n")
+            process.stdin.flush()
+        def request(request_id, method, params):
+            send(method, params, request_id)
+            deadline = time.monotonic() + 45
+            while True:
+                remaining = deadline - time.monotonic()
+                require(remaining > 0, f"App-server timeout: {method}")
+                try:
+                    line = messages.get(timeout=remaining)
+                except queue.Empty:
+                    raise RuntimeError(f"App-server timeout: {method}") from None
+                require(line is not None, f"App-server ended during {method}")
+                message = json.loads(line)
+                events.append({"received": message})
+                require(not ("method" in message and "id" in message), "Unexpected server request; no approvals or input are supplied")
+                if message.get("id") == request_id:
+                    require("error" not in message, f"App-server error: {message}")
+                    return message["result"]
+        try:
+            request(1, "initialize", {"clientInfo": {"name": "research_lab_distribution", "version": "1.0.0"},
+                                     "capabilities": {"experimentalApi": True}})
+            send("initialized")
+            started = request(2, "thread/start", {"cwd": str(project), "ephemeral": True})
+            require(started["thread"]["ephemeral"] is True, "Thread is not ephemeral")
+            require(Path(started["thread"]["cwd"]).resolve() == project, "Thread cwd differs")
+            skills = request(3, "skills/list", {"cwds": [str(project)], "forceReload": True})
+            require(len(skills["data"]) == 1, "Unexpected skill response scope")
+            entry = skills["data"][0]
+            require(not entry["errors"], f"Skill loader errors: {entry['errors']}")
+            found = [skill for skill in entry["skills"] if skill.get("pluginId") == "research-lab@research-lab"]
+            require(len(found) == 1 and found[0]["name"] == "research-lab:research" and found[0]["enabled"], "Installed research skill not enabled")
+            require(Path(found[0]["path"]).resolve() == installed / "skills/research/SKILL.md", "Loader used a different skill path")
+            require(any(skill.get("pluginId") == "distribution-canary@distribution-canary" and skill["enabled"]
+                        for skill in entry["skills"]), "Canary skill disappeared")
+            request(4, "thread/unsubscribe", {"threadId": started["thread"]["id"]})
+            return {"thread_id": started["thread"]["id"], "ephemeral": True,
+                    "skill": found[0], "loader_errors": entry["errors"], "model_turns": 0}
+        finally:
+            (work / f"{label}-app-server.json").write_text(json.dumps(events, indent=2) + "\n", encoding="utf-8")
+            process.stdin.close()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+            reader.join(timeout=2)
+            process.stdout.close()
+
+
+def native_checks(repo, commit, files, args, report, work):
+    cli = codex_binary(args.codex)
+    home = work / "codex-home"
+    home.mkdir()
+    project = work / "project"
+    project.mkdir()
+    (project / ".research/runs/retained").mkdir(parents=True)
+    (project / ".research/protocol.json").write_text('{"sentinel":"retained protocol"}\n', encoding="utf-8")
+    (project / ".research/runs/retained/result.json").write_text('{"sentinel":"retained evidence"}\n', encoding="utf-8")
+    (home / "unrelated-canary.txt").write_text("Retain unrelated user file\n", encoding="utf-8")
+    (home / "config.toml").write_text('[analytics]\nenabled = false\n', encoding="utf-8")
+    # Only the subprocesses receive this isolated environment; no real user
+    # config, credential store, marketplace, or installed cache is changed.
+    allowed = {"PATH", "SYSTEMROOT", "WINDIR", "PATHEXT", "COMSPEC", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL"}
+    env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+    env.update(CODEX_HOME=str(home), HOME=str(home), USERPROFILE=str(home),
+               GIT_CONFIG_GLOBAL=str(work / "gitconfig"), GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+    version = run([cli, "--version"], env=env).stdout.decode().strip()
+    require(version == CLI_VERSION, f"Expected {CLI_VERSION}; got {version}")
+    native = report["native"] = {"cli_version": version, "cli_binary": cli,
+                                  "scope": "plugin management and loader only; no authenticated model execution",
+                                  "isolated_codex_home": str(home), "commands": [], "states": {}}
+    def command(*parts, expected_success=True):
+        result = run([cli, *parts, "--json"], cwd=project, env=env, check=False)
+        stdout = result.stdout.decode("utf-8", "replace")
+        stderr = result.stderr.decode("utf-8", "replace")
+        entry = {"args": list(parts), "returncode": result.returncode, "stdout": stdout, "stderr": stderr}
+        native["commands"].append(entry)
+        try:
+            response = json.loads(stdout)
+        except json.JSONDecodeError:
+            response = None
+        def errors(value):
+            if isinstance(value, dict):
+                return bool(value.get("errors") or value.get("error")) or any(errors(item) for item in value.values())
+            return isinstance(value, list) and any(errors(item) for item in value)
+        succeeded = result.returncode == 0 and response is not None and not errors(response)
+        require(succeeded == expected_success, f"Unexpected native command outcome: {entry}")
+        return response
+    canary = work / "canary-marketplace"
+    (canary / ".agents/plugins").mkdir(parents=True)
+    (canary / "plugin/.codex-plugin").mkdir(parents=True)
+    (canary / "plugin/skills/distribution-canary").mkdir(parents=True)
+    (canary / ".agents/plugins/marketplace.json").write_text(json.dumps({
+        "name": "distribution-canary", "plugins": [{"name": "distribution-canary",
+        "source": {"source": "local", "path": "./plugin"},
+        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}}]}), encoding="utf-8")
+    (canary / "plugin/.codex-plugin/plugin.json").write_text(json.dumps({
+        "name": "distribution-canary", "version": "1.0.0", "description": "Distribution test canary", "skills": "./skills/"}), encoding="utf-8")
+    (canary / "plugin/skills/distribution-canary/SKILL.md").write_text(
+        "---\nname: distribution-canary\ndescription: Test fixture for native plugin preservation.\n---\n\nRead-only test canary.\n", encoding="utf-8")
+    command("plugin", "marketplace", "add", str(canary))
+    command("plugin", "add", "distribution-canary@distribution-canary")
+    canary_cache = home / "plugins/cache/distribution-canary"
+    preserved_canary = disk_hashes(canary_cache)
+    require(preserved_canary, "Canary plugin was not cached")
+    preserved_project = disk_hashes(project)
+    before_config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+    native["config_before"] = before_config
+    installed = home / "plugins/cache/research-lab/research-lab/1.0.0"
+    def state(label, expected, expected_revision=commit):
+        observed = disk_hashes(installed)
+        require(observed == hashes(expected), f"Installed payload mismatch at {label}: {observed}")
+        require(marketplace_root.is_relative_to(home), "Git marketplace snapshot is outside isolated CODEX_HOME")
+        snapshot_commit = git(marketplace_root, "rev-parse", "HEAD").decode().strip()
+        require(snapshot_commit == expected_revision, f"Marketplace resolved a different commit at {label}: {snapshot_commit}")
+        require(disk_hashes(canary_cache) == preserved_canary, f"Unrelated plugin changed at {label}")
+        require(disk_hashes(project) == preserved_project, f"Project research records changed at {label}")
+        require((home / "unrelated-canary.txt").read_text(encoding="utf-8") == "Retain unrelated user file\n", "Unrelated file changed")
+        config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+        projected = json.loads(json.dumps(config))
+        for section in ("plugins", "marketplaces"):
+            if section in projected:
+                for key in list(projected[section]):
+                    if key in {"research-lab", "research-lab@research-lab"}:
+                        del projected[section][key]
+                if not projected[section]:
+                    del projected[section]
+        require(projected == before_config, f"Unrelated config changed at {label}: {config}")
+        native["states"][label] = {"installed_sha256": observed, "config": config,
+                                    "marketplace_root": str(marketplace_root), "marketplace_commit": snapshot_commit,
+                                    "canary_sha256": preserved_canary, "project_sha256": preserved_project}
+    if args.public_source:
+        added = command("plugin", "marketplace", "add", args.public_source, "--ref", commit)
+        marketplace_root = Path(added["installedRoot"]).resolve()
+        command("plugin", "add", "research-lab@research-lab")
+        state("public-installed-B", payload(files))
+        native["loader"] = loader(cli, env, project, installed, work, "public-B")
+        state("public-loaded-B", payload(files))
+        return
+    baseline, old_files = committed_files(repo, args.baseline)
+    old = payload(old_files)
+    new = payload(files)
+    require(json.loads(old[".codex-plugin/plugin.json"])["version"] == "1.0.0", "Baseline version differs")
+    require(baseline != commit and hashes(old) != hashes(new), "A and B must be different real payloads")
+    changed = [name for name in sorted(new) if old[name] != new[name]]
+    require("skills/research/scripts/research.py" in changed and
+            any(name == "skills/research/SKILL.md" or "/references/" in name for name in changed),
+            "Choose an actual baseline with both source and guidance differences")
+    origin = work / "origin.git"
+    run(["git", "clone", "--bare", "--no-hardlinks", repo, origin], env=env)
+    run(["git", "--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"], env=env)
+    run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", baseline], env=env)
+    source = "https://distribution.invalid/research-lab.git"
+    run(["git", "config", "--file", work / "gitconfig", f"url.{origin.as_uri()}.insteadOf", source], env=env)
+    native.update(baseline_commit=baseline, candidate_commit=commit, changed_plugin_files=changed,
+                  local_origin=str(origin), source_transport="child-only Git URL rewrite to owned bare file origin")
+    added = command("plugin", "marketplace", "add", source)
+    marketplace_root = Path(added["installedRoot"]).resolve()
+    command("plugin", "add", "research-lab@research-lab")
+    state("installed-A", old, baseline)
+    run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", commit], env=env)
+    command("plugin", "marketplace", "upgrade", "research-lab")
+    state("refreshed-B", new)
+    native["loader"] = loader(cli, env, project, installed, work, "refreshed-B")
+    state("loaded-B", new)
+    unavailable = work / "origin-unavailable.git"
+    require(origin.resolve().is_relative_to(work) and unavailable.resolve().is_relative_to(work), "Origin move escaped work directory")
+    origin.rename(unavailable)
+    try:
+        command("plugin", "marketplace", "upgrade", "research-lab", expected_success=False)
+        state("failed-refresh-retained-B", new)
+    finally:
+        unavailable.rename(origin)
+    command("plugin", "remove", "research-lab@research-lab")
+    state("removed", {})
+    require(not installed.exists(), "Removed plugin cache directory remains")
+    command("plugin", "add", "research-lab@research-lab")
+    state("reinstalled-B", new)
+    native["reinstalled_loader"] = loader(cli, env, project, installed, work, "reinstalled-B")
+    state("reinstalled-loaded-B", new)
+    run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", baseline], env=env)
+    command("plugin", "marketplace", "upgrade", "research-lab")
+    state("restored-A", old, baseline)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--revision", default="HEAD")
+    parser.add_argument("--work-dir", type=Path, required=True, help="New evidence/scratch directory outside the source repo")
+    parser.add_argument("--native", action="store_true", help="Exercise official CLI plugin management and loader, without model turns")
+    parser.add_argument("--baseline", default=BASELINE)
+    parser.add_argument("--codex", help="Installed native Codex executable (default: resolve official npm installation)")
+    parser.add_argument("--public-source", help="Optional public marketplace install check instead of the local lifecycle; use only after publication")
+    args = parser.parse_args()
+    repo, work = args.repo.resolve(), args.work_dir.resolve()
+    require(not work.is_relative_to(repo), "Evidence/scratch directory must be outside the source repository")
+    work.mkdir(parents=True, exist_ok=False)
+    report = {"status": "running", "host": platform.platform(), "python": sys.version,
+              "git": run(["git", "--version"]).stdout.decode().strip()}
+    try:
+        commit, files = audit_package(repo, args.revision, report, work)
+        if args.native:
+            native_checks(repo, commit, files, args, report, work)
+        require(not args.public_source or args.native, "--public-source requires --native")
+        report["status"] = "passed"
+    except Exception as error:
+        report.update(status="failed", error=f"{type(error).__name__}: {error}")
+        raise
+    finally:
+        output = work / "report.json"
+        output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"status": report["status"], "report": str(output)}))
+
+
+if __name__ == "__main__":
+    main()

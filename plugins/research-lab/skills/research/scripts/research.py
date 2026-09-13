@@ -295,7 +295,8 @@ def snapshot_files(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     files: dict[str, zipfile.ZipInfo] = {}
     seen: set[str] = set()
     for entry in archive.infolist():
-        name = archive_name(entry.filename)
+        # ZipInfo may normalize backslashes or truncate NULs before validation.
+        name = archive_name(entry.orig_filename)
         if name.casefold() in seen:
             raise ResearchError(f"Duplicate or case-colliding snapshot path: {name}")
         seen.add(name.casefold())
@@ -345,6 +346,12 @@ def read_manifest(storage: Path, run_id: str) -> tuple[Path, dict]:
         "prepared", "launching", "running", "completed", "failed", "timed_out", "interrupted", "launch_failed"
     }:
         raise ResearchError(f"Invalid run manifest status: {run_id}")
+    for field in ("source", "evidence"):
+        if not isinstance(manifest.get(field), dict):
+            raise ResearchError(f"Invalid run manifest {field}: expected an object: {run_id}")
+    commit = manifest["source"].get("commit")
+    if not isinstance(commit, str) or not commit or "\0" in commit:
+        raise ResearchError(f"Invalid run manifest source.commit: expected a nonempty NUL-free string: {run_id}")
     return directory, manifest
 
 
@@ -642,7 +649,8 @@ def compare(storage: Path, baseline_id: str, candidate_id: str) -> dict:
         launches = ledger(storage)
         pair = [read_manifest(storage, run_id) for run_id in (baseline_id, candidate_id)]
         for directory, manifest in pair:
-            if (manifest.get("status") != "completed" or manifest.get("exit_code") != 0
+            if (manifest.get("status") != "completed" or type(manifest.get("exit_code")) is not int
+                    or manifest["exit_code"] != 0
                     or manifest.get("evidence", {}).get("status") != "valid"
                     or manifest["id"] not in launches["claims"]):
                 raise ResearchError(f"Run is incomplete or has invalid evidence: {manifest['id']}")
@@ -652,6 +660,9 @@ def compare(storage: Path, baseline_id: str, candidate_id: str) -> dict:
             result = safe_path(storage, "runs", manifest["id"], "result.json")
             if result_evidence(result, protocol["metric"]["name"]) != manifest["evidence"]:
                 raise ResearchError(f"Result evidence changed after completion: {manifest['id']}")
+            # Python equality permits True == 1, including in secondary metrics.
+            for name, value in manifest["evidence"]["metrics"].items():
+                finite_number(value, f"recorded metrics.{name}")
             log = safe_path(storage, "runs", manifest["id"], "run.log")
             if file_digest(log) != manifest.get("log_sha256"):
                 raise ResearchError(f"Log evidence changed after completion: {manifest['id']}")

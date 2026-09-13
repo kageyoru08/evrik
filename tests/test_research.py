@@ -1,6 +1,7 @@
 """Black-box checks of the local runner and the shipped example."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -157,6 +158,112 @@ class RunnerTests(unittest.TestCase):
         ledger["schema_version"] = True
         ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
         self.invoke("inspect", expected=2)
+
+    def test_nested_manifest_containers_reject_before_any_new_launch(self):
+        baseline = self.prepare("valid-baseline")
+        candidate = self.prepare("valid-candidate", "--replicate")
+        for run_id in (baseline, candidate):
+            command(self.project, "run", "--id", run_id)
+        prepared = self.prepare("not-yet-launched", "--replicate")
+        ledger_path = self.project / ".research/launches.json"
+        ledger_before = ledger_path.read_bytes()
+        for run_id in (prepared, candidate):
+            path = self.run_path(run_id) / "manifest.json"
+            original = path.read_bytes()
+            for field in ("source", "evidence"):
+                for value in (None, [], "malformed", 17):
+                    with self.subTest(state=run_id == prepared, field=field, value=value):
+                        mutated = json.loads(original)
+                        mutated[field] = value
+                        path.write_text(json.dumps(mutated), encoding="utf-8")
+                        try:
+                            self.invoke("inspect", "--id", run_id, expected=2)
+                            self.invoke("run", "--id", run_id, expected=2)
+                            if run_id == candidate:
+                                self.invoke("compare", "--baseline", baseline, "--candidate", candidate, expected=2)
+                            self.assertEqual(ledger_before, ledger_path.read_bytes())
+                            self.assertFalse((self.run_path(prepared) / "run.log").exists())
+                        finally:
+                            path.write_bytes(original)
+        self.assertEqual(command(self.project, "compare", "--baseline", baseline,
+                                 "--candidate", candidate)["outcome"], "no_improvement")
+
+    def test_source_commit_is_validated_before_persisting_a_launch_claim(self):
+        for index, value in enumerate((None, [], 17, "", "bad\u0000commit")):
+            with self.subTest(value=value):
+                self.project = make_project(Path(self.temporary.name) / f"commit-value-{index}")
+                run_id = self.prepare("environment-value")
+                path = self.run_path(run_id) / "manifest.json"
+                original = path.read_bytes()
+                mutated = json.loads(original)
+                mutated["source"]["commit"] = value
+                # Deliberately update the fixture checksum to reach the environment
+                # value boundary. This is not a coherent-tampering security claim.
+                inputs = {key: mutated[key] for key in ("source", "protocol_sha256", "data", "environment")}
+                raw = json.dumps(inputs, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+                mutated["fingerprint"] = hashlib.sha256(raw).hexdigest()
+                path.write_text(json.dumps(mutated), encoding="utf-8")
+                try:
+                    self.invoke("run", "--id", run_id, expected=2)
+                    self.assertFalse((self.project / ".research/launches.json").exists())
+                    self.assertFalse((self.run_path(run_id) / "run.log").exists())
+                    self.assertFalse((self.run_path(run_id) / "result.json").exists())
+                finally:
+                    path.write_bytes(original)
+
+    def test_comparison_rejects_exit_and_secondary_metric_type_lookalikes(self):
+        evaluator = (
+            "import sys\nfrom pathlib import Path\n"
+            "Path(sys.argv[2]).write_text('{\"metrics\":{\"mse\":2,\"secondary\":1}}', encoding='utf-8')\n"
+        )
+        self.commit_file("evaluate.py", evaluator)
+        baseline = self.prepare("baseline-types")
+        candidate = self.prepare("candidate-types", "--replicate")
+        for run_id in (baseline, candidate):
+            command(self.project, "run", "--id", run_id)
+        path = self.run_path(candidate) / "manifest.json"
+        original = path.read_bytes()
+        ledger_before = (self.project / ".research/launches.json").read_bytes()
+        for field, value in (("exit_code", False), ("exit_code", 0.0), ("secondary", True)):
+            with self.subTest(field=field, value=value):
+                mutated = json.loads(original)
+                if field == "secondary":
+                    mutated["evidence"]["metrics"][field] = value
+                else:
+                    mutated[field] = value
+                path.write_text(json.dumps(mutated), encoding="utf-8")
+                try:
+                    self.invoke("compare", "--baseline", baseline, "--candidate", candidate, expected=2)
+                    self.assertEqual(ledger_before, (self.project / ".research/launches.json").read_bytes())
+                finally:
+                    path.write_bytes(original)
+        # Numeric integer/float equivalence is permitted; Boolean substitution is not.
+        numeric = json.loads(original)
+        numeric["evidence"]["metrics"]["secondary"] = 1.0
+        path.write_text(json.dumps(numeric), encoding="utf-8")
+        self.assertEqual(command(self.project, "compare", "--baseline", baseline,
+                                 "--candidate", candidate)["outcome"], "no_improvement")
+
+    def test_advisory_metadata_preserves_claims_and_conservative_uncertainty(self):
+        run_id = self.prepare("advisory-metadata")
+        command(self.project, "run", "--id", run_id)
+        path = self.run_path(run_id) / "manifest.json"
+        original = json.loads(path.read_text(encoding="utf-8"))
+        ledger_path = self.project / ".research/launches.json"
+        original_ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        for value in (None, {}, [], False, 0, "uninterpreted"):
+            with self.subTest(value=value):
+                manifest = dict(original, status="launch_failed", cleanup=value)
+                manifest.pop("process", None)
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                ledger = json.loads(json.dumps(original_ledger))
+                ledger["claims"][run_id] = value
+                ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+                detail = command(self.project, "inspect", "--id", run_id)
+                self.assertTrue(detail["launch_claimed"])
+                self.assertTrue(detail["unresolved"])
+                self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 1)
+                self.invoke("run", "--id", run_id, expected=2)
 
     def test_changed_active_execution_caps_require_new_preparation(self):
         original_budget = json.loads((self.project / ".research/protocol.json").read_text(encoding="utf-8"))["budget"]

@@ -15,3 +15,36 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s tests -v
+  distribution:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm install --global @openai/codex@0.153.4
+      - name: Check committed package and native plugin lifecycle
+        run: python tests/check_distribution.py --native --work-dir "${{ runner.temp }}/research-lab-distribution"
+      - name: Verify published commit through the public marketplace origin
+        if: github.repository == 'kageyoru08/research-lab' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: python tests/check_distribution.py --native --public-source https://github.com/kageyoru08/research-lab.git --work-dir "${{ runner.temp }}/research-lab-public-distribution"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: distribution-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/research-lab-distribution/report.json
+            ${{ runner.temp }}/research-lab-distribution/*-app-server.json
+            ${{ runner.temp }}/research-lab-distribution/*-app-server.stderr.txt
+            ${{ runner.temp }}/research-lab-public-distribution/report.json
+            ${{ runner.temp }}/research-lab-public-distribution/*-app-server.json
+            ${{ runner.temp }}/research-lab-public-distribution/*-app-server.stderr.txt
+          if-no-files-found: error
