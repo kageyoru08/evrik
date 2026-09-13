@@ -70,6 +70,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(command(self.project, "inspect")["runs"], [])
 
     def test_git_discovery_cannot_attribute_live_checkout_data_to_snapshot(self):
+        self.project = make_project(Path(self.temporary.name) / ("git" + os.pathsep + "project"))
         other = make_project(Path(self.temporary.name) / "other-project")
         self.commit_file("live_metric.txt", "123")
         evaluator = (
@@ -110,7 +111,7 @@ class RunnerTests(unittest.TestCase):
         log = (self.run_path(run_id) / "run.log").read_text(encoding="utf-8")
         self.assertIn("snapshot_value=123", log)
         self.assertIn("snapshot_commit=" + recorded["source"]["commit"], log)
-        self.assertIn("not a git repository", log.lower())
+        self.assertIn("invalid gitfile format", log.lower())
 
     def test_integer_metric_improvement_preserves_exact_precision(self):
         self.protocol(lambda p: p["budget"].update(max_runs=16))
@@ -319,15 +320,64 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result["cleanup"]["descendant_state"], "unknown")
         self.assertTrue(command(self.project, "inspect", "--id", run_id)["unresolved"])
 
+    def test_failed_foreground_evaluator_leaves_descendants_unresolved(self):
+        started = Path(self.temporary.name) / "worker-started.txt"
+        heartbeat = Path(self.temporary.name) / "worker-heartbeat.txt"
+        release = Path(self.temporary.name) / "worker-release.txt"
+        finished = Path(self.temporary.name) / "worker-finished.txt"
+        worker = (
+            "import sys,time\nfrom pathlib import Path\n"
+            "Path(sys.argv[1]).write_text('started')\n"
+            "deadline = time.monotonic() + 10\n"
+            "while not Path(sys.argv[3]).exists() and time.monotonic() < deadline:\n"
+            " Path(sys.argv[2]).write_text(str(time.monotonic()))\n time.sleep(0.02)\n"
+            "Path(sys.argv[4]).write_text('finished')\n"
+        )
+        evaluator = (
+            "import os,subprocess,sys,threading,time\nfrom pathlib import Path\n"
+            "def fail_after_start():\n"
+            " deadline = time.monotonic() + 5\n"
+            " while not Path(sys.argv[2]).exists() and time.monotonic() < deadline: time.sleep(0.01)\n"
+            " os._exit(3)\n"
+            "threading.Thread(target=fail_after_start, daemon=True).start()\n"
+            "subprocess.run([sys.executable, '-c', " + repr(worker)
+            + ", sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]], check=True)\n"
+        )
+        self.commit_file("failed.py", evaluator)
+        self.protocol(lambda p: p.update(command=["{python}", "failed.py", "{result}",
+                                                 str(started), str(heartbeat), str(release), str(finished)]))
+        run_id = self.prepare("failed-foreground-evaluator")
+        try:
+            result = self.invoke("run", "--id", run_id, expected=1)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["exit_code"], 3)
+            self.assertTrue(started.exists())
+            before_inspect = heartbeat.stat().st_mtime_ns
+            self.assertFalse(finished.exists())
+            detail = command(self.project, "inspect", "--id", run_id)
+            overview = command(self.project, "inspect")
+            self.assertTrue(detail["unresolved"])
+            self.assertTrue(overview["runs"][0]["unresolved"])
+            self.assertEqual(overview["launch_claims_used"], 1)
+            self.assertGreater(heartbeat.stat().st_mtime_ns, before_inspect, "Worker was not alive during inspection")
+            self.assertFalse(finished.exists(), "Worker should remain held until the test releases it")
+            self.invoke("run", "--id", run_id, expected=2)
+        finally:
+            release.write_text("stop", encoding="utf-8")
+            deadline = time.monotonic() + 3
+            while not finished.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(finished.exists(), "Worker did not finish after the test released it")
+
     def test_inspect_preserves_cleanup_uncertainty_in_detail_and_list(self):
         run_id = self.prepare("cleanup-state")
         command(self.project, "run", "--id", run_id)
         path = self.run_path(run_id) / "manifest.json"
         original = json.loads(path.read_text(encoding="utf-8"))
-        for status in ("timed_out", "interrupted", "launch_failed"):
+        for status in ("failed", "timed_out", "interrupted", "launch_failed"):
             for cleanup in (None, {}, {"tree_termination_confirmed": False}, {"tree_termination_confirmed": True}):
                 with self.subTest(status=status, cleanup=cleanup):
-                    manifest = dict(original, status=status)
+                    manifest = dict(original, status=status, exit_code=-9 if status == "failed" else original["exit_code"])
                     manifest.pop("process", None)
                     if cleanup is not None:
                         manifest["cleanup"] = cleanup

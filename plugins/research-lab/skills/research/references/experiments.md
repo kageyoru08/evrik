@@ -38,7 +38,7 @@ compare --project PATH --baseline ID --candidate ID
 
 The source archive does not make undeclared inputs, external services, or host dependencies reproducible. Declare relevant inputs, keep evaluation code inspectable, and document remaining environment assumptions.
 
-The snapshot has no Git metadata. The runner clears inherited `GIT_*` settings and bounds upward Git discovery, so ordinary Git commands cannot silently find the live parent repository. Adapt Git-dependent evaluators to use the frozen `RESEARCH_SOURCE_COMMIT` and `RESEARCH_SOURCE_ROOT` environment values when sufficient. Read data relative to the captured source. This boundary prevents accidental Git discovery; it does not restrict trusted code from explicitly accessing other paths.
+The snapshot has no Git repository. The runner adds an explanatory `.git` boundary marker with deliberately invalid Git-file format and clears inherited `GIT_*` settings. Ordinary Git discovery therefore fails at the snapshot, including in paths containing `:` on POSIX or `;` on Windows, instead of finding the live parent. Keep the boundary marker intact. Adapt Git-dependent evaluators to use the frozen `RESEARCH_SOURCE_COMMIT` and `RESEARCH_SOURCE_ROOT` environment values when sufficient. Read data relative to the captured source. This boundary prevents accidental Git discovery; it does not restrict trusted code from explicitly accessing other paths.
 
 ## Execute and inspect
 
@@ -52,7 +52,7 @@ The primary metric must be present, and all values in `metrics` must be finite n
 
 Use a foreground evaluator that waits for all its workers and finalizes `{result}` before returning. Detached jobs and background result writers are unsupported. Read and hash completed evidence after the writer has finished; keep the original result and log immutable.
 
-One run ID permits one launch attempt. The budget conservatively consumes the launch claim before process creation so a crash cannot authorize a duplicate launch. Do not alter a manifest to bypass that rule. Use `inspect` before resuming and whenever execution is uncertain. `launching`, `running`, timed-out, and interrupted records require reconciliation; cleanup observations do not prove every descendant stopped. Inspection does not infer completion from a persisted PID or silently relaunch. Reconcile the actual execution in project notes before deciding on a separate explicitly replicated run.
+One run ID permits one launch attempt. The budget conservatively consumes the launch claim before process creation so a crash cannot authorize a duplicate launch. Do not alter a manifest to bypass that rule. Use `inspect` before resuming and whenever execution is uncertain. `launching`, `running`, failed, timed-out, and interrupted executions require reconciliation; a failed evaluator can leave ordinary foreground workers alive, and cleanup observations do not prove every descendant stopped. Pre-child `launch_failed` is separately resolvable when no child was created. Inspection does not infer completion from a persisted PID or silently relaunch. Reconcile the actual execution in project notes before deciding on a separate explicitly replicated run.
 
 The runner is synchronous and is not a durable service. A prompt or skill cannot guarantee supervision after Codex or its host stops. Schedule follow-up only through an available native facility when the user requests it, without treating a reminder as process supervision.
 

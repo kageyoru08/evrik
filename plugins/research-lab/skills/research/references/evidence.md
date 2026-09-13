@@ -25,4 +25,4 @@ Scale the report to the work. Cover the research question, method and comparison
 
 For uncertainty or stability claims, show the actual supporting design and analysis: for example, paired seeds, repeated trials, confidence intervals, or disjoint evaluation data when the protocol requires them. Do not invent uncertainty estimates from one aggregate number.
 
-An interrupted run stays unresolved until its actual execution is established. Read existing manifests and logs before continuing, preserve the uncertainty in project notes, and do not infer process identity from a reused PID. A paused conversation does not provide durable job supervision.
+A failed, interrupted, or timed-out execution stays unresolved until its actual execution is established; its workers may outlive the evaluator. Read existing manifests and logs before continuing, preserve the uncertainty in project notes, and do not infer process identity from a reused PID. A paused conversation does not provide durable job supervision.

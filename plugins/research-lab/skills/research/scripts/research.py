@@ -434,6 +434,9 @@ def verify_snapshot(storage: Path, directory: Path, manifest: dict) -> dict:
 def extract_source(storage: Path, directory: Path) -> Path:
     source = safe_path(storage, "runs", directory.name, "source-" + uuid.uuid4().hex[:12])
     source.mkdir()
+    # Invalid Git metadata stops ancestor discovery even when paths contain os.pathsep.
+    # This is deliberately not a valid gitdir pointer to any external directory.
+    (source / ".git").write_text("Research Lab snapshot: Git metadata is unavailable.\n", encoding="utf-8")
     with zipfile.ZipFile(directory / "source.zip") as archive:
         files = snapshot_files(archive)
         for name, entry in files.items():
@@ -527,8 +530,7 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         atomic_json(directory / "manifest.json", manifest)
     try:
         child_environment = without_git_environment()
-        child_environment.update(GIT_CEILING_DIRECTORIES=str(source.parent),
-                                 RESEARCH_SOURCE_COMMIT=manifest["source"]["commit"],
+        child_environment.update(RESEARCH_SOURCE_COMMIT=manifest["source"]["commit"],
                                  RESEARCH_SOURCE_ROOT=str(source))
         with log_path.open("xb") as log:
             process = subprocess.Popen(command, cwd=source, stdin=subprocess.DEVNULL, stdout=log,
@@ -576,7 +578,7 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
 
 def unresolved_launch(manifest: dict, claimed: bool) -> bool:
     status = manifest.get("status")
-    if status in {"launching", "running", "timed_out", "interrupted"} or (claimed and status == "prepared"):
+    if status in {"launching", "running", "failed", "timed_out", "interrupted"} or (claimed and status == "prepared"):
         return True  # Signals and direct-child reaping do not prove all descendants ended.
     if status == "launch_failed" and ("cleanup" in manifest or manifest.get("process") is not None):
         return True
