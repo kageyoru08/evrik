@@ -167,14 +167,26 @@ class RunnerTests(unittest.TestCase):
         prepared = self.prepare("not-yet-launched", "--replicate")
         ledger_path = self.project / ".research/launches.json"
         ledger_before = ledger_path.read_bytes()
+        missing = object()
+        mutations = {
+            "source": (missing, None, [], "malformed", 17),
+            "evidence": (missing, None, [], "malformed", 17),
+            "source.commit": (missing, None, [], 17, "", "bad\u0000commit"),
+        }
         for run_id in (prepared, candidate):
             path = self.run_path(run_id) / "manifest.json"
             original = path.read_bytes()
-            for field in ("source", "evidence"):
-                for value in (None, [], "malformed", 17):
-                    with self.subTest(state=run_id == prepared, field=field, value=value):
+            for field, values in mutations.items():
+                for value in values:
+                    with self.subTest(state=run_id == prepared, field=field,
+                                      value="<missing>" if value is missing else value):
                         mutated = json.loads(original)
-                        mutated[field] = value
+                        parent = mutated["source"] if field == "source.commit" else mutated
+                        key = "commit" if field == "source.commit" else field
+                        if value is missing:
+                            del parent[key]
+                        else:
+                            parent[key] = value
                         path.write_text(json.dumps(mutated), encoding="utf-8")
                         try:
                             self.invoke("inspect", "--id", run_id, expected=2)

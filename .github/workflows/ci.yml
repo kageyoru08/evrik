@@ -15,6 +15,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s tests -v
+        env:
+          RESEARCH_FAULT_EVIDENCE: ${{ runner.temp }}/research-lab-fault-evidence
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: runner-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/research-lab-fault-evidence/reports/*.json
+          if-no-files-found: error
   distribution:
     strategy:
       matrix:
