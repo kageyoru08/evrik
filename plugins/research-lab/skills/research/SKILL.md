@@ -87,14 +87,18 @@ source assessment, or synthesis.
 When live discovery is requested, perform a relevant search. Supplied links
 are leads; opening them alone is not discovery.
 
-Immediately after each completed search call or batch, append its exact
-queries, actual search date, returned source identifiers, and brief coverage
-and selection notes to the working record, before further discovery or
-synthesis.
+Capture each completed search or batch before further discovery or synthesis.
+When native tool composition is available, use the capture pattern in the
+literature reference to save and verify the actual request, date, and response
+within the same call before returning it. Link that verified receipt from the
+working record and add brief coverage and selection notes; do not copy its
+raw fields again.
 
-Copy identifiers as complete opaque tokens, preserving prefixes. Reconcile
-the record against available completed results before describing it as exact
-or complete. Do not invent per-query associations for batched results.
+Otherwise immediately record the exact queries, actual search date, returned
+source identifiers, and coverage/selection notes through native file tools.
+Preserve identifiers as complete opaque tokens, including prefixes. Reconcile
+the saved evidence against available completed results before describing it
+as exact or complete. Do not invent per-query associations for batched results.
 Distinguish planned queries, failed or interrupted attempts, completed
 searches, and directly opened leads. Record unavailable coverage and later
 selection changes truthfully.
@@ -174,6 +178,12 @@ Stop according to the agreed question, budget, and acceptance criteria.
 Use tools actually available in Codex; require no particular connector, model,
 or other skill. Change effort or delegation settings only through available
 controls and claim changes only when confirmed.
+
+Use the smallest search, inspection, or test that resolves the current
+uncertainty. Reuse verified evidence while its inputs remain valid; broaden or
+repeat work only for changed inputs, a failure, or an unresolved question.
+Keep full records in files and return relevant evidence without repeatedly
+loading or copying raw outputs into context.
 
 Delegate bounded independent questions when useful, specifying evidence,
 output, and file ownership. Explicitly assign isolated directories when

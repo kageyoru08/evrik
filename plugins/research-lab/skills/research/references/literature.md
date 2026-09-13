@@ -2,6 +2,47 @@
 
 Use available search and reading tools. Keep the search proportional to the question; a focused synthesis does not automatically require an exhaustive review or an experiment.
 
+## Capture native search responses
+
+When native code composition is exposed, save the actual search request, date,
+and returned response before exposing the response for synthesis. Resolve the
+host's real tool names, result contracts, and shell; no replacement search
+tool or runtime is needed. Choose a new receipt path in the authorized work
+area. A verified receipt supplies the raw fields; the working record links it
+and adds brief coverage and selection notes without duplicating its contents.
+
+This example uses the observed Windows bindings. Set `request` and
+`recordPath` from the task; use the native file reader for the actual shell:
+
+```javascript
+const response = await tools.web__run(request);
+const serialized = JSON.stringify({request, completed_at: new Date().toISOString(), response})
+  .replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+// Optional session recovery, only when store/load are documented by the host.
+if (typeof store === "function") store(recordPath, serialized);
+await tools.apply_patch("*** Begin Patch\n*** Add File: " + recordPath + "\n+" + serialized + "\n*** End Patch");
+const saved = await tools.exec_command({
+  cmd: "Get-Content -LiteralPath '" + recordPath.replace(/'/g, "''") + "' -Raw -Encoding UTF8",
+  max_output_tokens: 20000
+});
+if (saved.exit_code !== 0 || typeof saved.output !== "string" || saved.output.trim() !== serialized)
+  throw new Error("Capture incomplete; do not repeat the search");
+text(response);
+```
+
+Honor actual tool errors. An empty patch result does not prove failure or
+require an invented success field; the subsequent exact content comparison
+verifies persistence. A write/read error or truncated readback leaves capture
+incomplete. Recover a surviving response from the documented session store
+or usable receipt and repair only the failed operation. Session storage is
+not durable; if no response survives, report incomplete capture instead of
+silently repeating the search. Do not print the readback again.
+
+The receipt proves what was recorded, not search success, source reading, or
+coverage. Calls outside the composition remain outside its guarantee. When
+composition is unavailable, use immediate native write/read capture and do
+not describe manual transcription as automatic capture.
+
 ## Find and read evidence
 
 Translate the question into concepts, synonyms, relevant methods, and exclusions. Adapt search terms to early findings without presenting the resulting search as preregistered.
