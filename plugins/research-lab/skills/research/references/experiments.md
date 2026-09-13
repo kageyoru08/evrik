@@ -17,6 +17,8 @@ The runner protocol is `.research/protocol.json`. `init` creates a starting prot
 - `comparability`, project-defined comparison conditions such as split identity and seeds.
 - `budget` with `max_runs` and `timeout_seconds`.
 
+List files whose content must stay fixed between the baseline and candidate. Keep intentionally changed model configuration, parameters, and implementation out of `data_paths`; their versions are already captured in each source snapshot. Check this separation before the first launch.
+
 Inspect runner validation errors for the exact accepted values. Additional scientific decisions belong in research notes when they have no executable representation. Matching metadata is a necessary operational check, not proof that the evaluator obeyed the design.
 
 ## Prepare attributable source

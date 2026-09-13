@@ -23,6 +23,8 @@ The runner captures declared local inputs and committed code. External services,
 
 Scale the report to the work. Cover the research question, method and comparison conditions, decisive evidence with citations or run paths, outcome against the original criteria, limitations, and any necessary next step. Identify failed or incomplete measurements that materially affect interpretation. Include negative results and results that miss the acceptance threshold.
 
+For a completed bundled-runner run with valid result evidence, the run directory contains `manifest.json`, `source.zip`, `result.json`, and `run.log`. Verify the paths you cite against the files you inspected.
+
 For uncertainty or stability claims, show the actual supporting design and analysis: for example, paired seeds, repeated trials, confidence intervals, or disjoint evaluation data when the protocol requires them. Do not invent uncertainty estimates from one aggregate number.
 
 A failed, interrupted, or timed-out execution stays unresolved until its actual execution is established; its workers may outlive the evaluator. Read existing manifests and logs before continuing, preserve the uncertainty in project notes, and do not infer process identity from a reused PID. A paused conversation does not provide durable job supervision.
