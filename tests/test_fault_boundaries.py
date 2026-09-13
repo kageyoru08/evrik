@@ -181,15 +181,23 @@ class FaultBoundaryTests(unittest.TestCase):
 
     def wait_ready(self, process, ready):
         deadline = time.monotonic() + 20
-        while not ready.exists():
+        attempts = {"path": str(ready), "read_attempts": 0, "last_transient_error": None}
+        self.record["events"].append({"ready_wait": attempts})
+        while True:
             if process.poll() is not None:
                 output = process.communicate(timeout=5)
                 self.fail(f"Instrumentation exited before boundary: {process.returncode}, {output}")
             if time.monotonic() >= deadline:
                 self.fail("Instrumentation did not reach requested boundary within 20 seconds")
-            time.sleep(0.01)
-        payload = json.loads(ready.read_text(encoding="utf-8"))
-        self.record["events"].append({"ready": payload})
+            attempts["read_attempts"] += 1
+            try:
+                payload = json.loads(ready.read_text(encoding="utf-8"))
+            except (PermissionError, FileNotFoundError) as error:
+                attempts["last_transient_error"] = repr(error)
+                time.sleep(0.01)
+            else:
+                self.record["events"].append({"ready": payload})
+                return
 
     def finish_driver(self, process):
         stdout, stderr = process.communicate(timeout=30)
