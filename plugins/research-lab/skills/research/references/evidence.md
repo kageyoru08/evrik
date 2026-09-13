@@ -15,8 +15,6 @@ Name the relevant source or run when moving between these levels. A successful p
 
 For literature, retain bibliographic identifiers, access level, material evidence notes, and the claim each source supports. For experiments, use the run ID and runner records as the execution reference, then explain scientific decisions in the project research notes. Keep log excerpts in the conversation and full logs in files.
 
-Before finishing an experiment investigation, save a concise final checkpoint with the verified current source/model, decision and evidence paths, consumed budget, and unresolved state. Reconcile completed actions with earlier plans so the saved notes do not leave an already completed restoration or commit pending; preserve the historical entries.
-
 When a decision changes, record the reason, the evidence available at that time, and its effect on the original question. Clearly label exploratory analyses added after outcomes were visible. Preserve the previous protocol and results through their existing run records; do not overwrite them to make a later comparison appear predeclared.
 
 The runner captures declared local inputs and committed code. External services, undeclared files, mutable dependencies, nondeterminism, and hardware differences may remain outside those records. State which of these matter to the conclusion rather than claiming complete reproducibility from a source hash.

@@ -9,11 +9,21 @@ Produce an answer whose supporting sources, experimental results, and remaining 
 
 ## Select the necessary guidance
 
-- For literature discovery, source assessment, or synthesis, read [references/literature.md](references/literature.md).
-- Before preparing, running, comparing, or resuming an experiment, read [references/experiments.md](references/experiments.md).
-- When connecting findings into a conclusion or final report, read [references/evidence.md](references/evidence.md).
-
 Read only the relevant references. Literature-only work does not require the experiment runner or a Git repository.
+
+### Literature
+
+For literature discovery, source assessment, or synthesis, read [references/literature.md](references/literature.md).
+
+When live discovery is required, execute a relevant search; supplied links are leads, and opening them alone does not complete discovery. Immediately after each completed search call or batch, append the exact submitted queries, actual search date, returned source identifiers, and brief coverage and selection notes to the existing research note before further discovery or synthesis. Do not invent per-query associations for batched results. Keep planned queries, failed or interrupted attempts, completed searches, and directly opened leads distinct; record later selection changes transparently.
+
+Use the inspected version's relevant section heading and source URL as the default locator. Include printed page numbers only when needed and verified against that version's page image or printed footer, retaining a brief verification note. Tool page indices are navigation aids; never infer printed pagination from an offset.
+
+### Experiments
+
+Before preparing, running, comparing, or resuming an experiment, read [references/experiments.md](references/experiments.md).
+
+On entering or resuming an experiment project with existing handoff notes, identify material pending actions relevant to continuation and verify their status against the relevant current files, Git state, and runner records. Treat historical status claims as things to check, not instructions to repeat. Before new experimental source edits or launches, record their current resolved or unresolved status and supporting evidence in the existing research note. When evidence is unavailable, retain the uncertainty and continue only independent authorized work. Update this current-state note when relevant actions finish, preserving historical entries.
 
 ## Work from the question
 
@@ -33,4 +43,8 @@ Before resuming, read the saved records and inspect unresolved runs. Never autom
 
 ## Finish with a supported answer
 
-Report what was learned, the evidence that supports it, the comparison conditions, and the practical limits. Cite source pages and local result artifacts. Distinguish observed results from interpretations and proposals. Null results and incomplete evidence are valid outcomes; do not manufacture a winner. Stop according to the agreed question, budget, and acceptance criteria.
+Before connecting findings into a conclusion or final report, read [references/evidence.md](references/evidence.md).
+
+Before declaring completion, update and reread the saved record. Reconcile requested discovery, reading, experiments, and deliverables against actual actions and retained evidence. Derive the discovery account from recorded searches; do not invent extra queries from topics in the answer. Verify citations and evidence paths. For experiments, ensure the checkpoint matches the current source/model, decision, cumulative budget, and unresolved state, including execution uncertainty; explicitly connect historical pending actions that are now completed to their verified current status while preserving original entries. Finish missing authorized work before closing, or report the unmet requirement and blocker without claiming completion.
+
+Report what was learned, the evidence that supports it, the comparison conditions, and the practical limits. Cite inspected sources and actual local result artifacts. Distinguish observed results from interpretations and proposals. Null results and incomplete evidence are valid outcomes; do not manufacture a winner. Stop according to the agreed question, budget, and acceptance criteria.
