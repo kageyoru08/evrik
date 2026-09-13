@@ -23,6 +23,18 @@ Example requests:
 
 > Use $research to resume this investigation. Inspect saved runs before launching anything and explain what the existing evidence supports.
 
+## Refresh an existing installation
+
+For an installed plugin from this Git marketplace, refresh only Research Lab:
+
+```sh
+codex plugin marketplace upgrade research-lab --json
+```
+
+On the tested Codex CLI **0.153.4**, this command updated both the marketplace snapshot and the installed cached skill when its contents changed while the plugin version stayed **1.0.0**. This behavior has not been validated on other CLI versions.
+
+Check that the response has no errors, then start a new Codex task and select **Research Lab**. An existing task may retain previously loaded skill instructions. For a reissue that keeps version **1.0.0**, identify the intended revision by its Git commit and compare the installed runner and skill file hashes with that commit; the version number alone cannot distinguish revisions.
+
 ## What is included
 
 | Component | Responsibility |
@@ -51,6 +63,8 @@ Run the repository checks with:
 ```sh
 python -m unittest discover -s tests -v
 ```
+
+See [native agent behavior validation](BEHAVIOR.md) for the observed use of the installed plugin in a separate Codex task, beyond the scripted example and runner tests.
 
 ## Use the runner directly
 
