@@ -67,9 +67,19 @@ def reject_constant(value: str) -> None:
     raise ResearchError(f"Non-finite JSON value is not allowed: {value}")
 
 
+def unique_json_object(pairs: list[tuple[str, Any]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ResearchError(f"Duplicate JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
 def read_json(path: Path) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant)
+        return json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant,
+                          object_pairs_hook=unique_json_object)
     except (OSError, ValueError) as exc:
         raise ResearchError(f"Cannot read JSON at {path}: {exc}") from exc
 
@@ -328,25 +338,37 @@ def read_manifest(storage: Path, run_id: str) -> tuple[Path, dict]:
     manifest = read_json(safe_path(storage, "runs", run_id, "manifest.json"))
     if not isinstance(manifest, dict) or manifest.get("id") != run_id:
         raise ResearchError(f"Invalid run manifest: {run_id}")
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
+        raise ResearchError(f"Unsupported run manifest schema_version: {run_id}")
+    status = manifest.get("status")
+    if not isinstance(status, str) or status not in {
+        "prepared", "launching", "running", "completed", "failed", "timed_out", "interrupted", "launch_failed"
+    }:
+        raise ResearchError(f"Invalid run manifest status: {run_id}")
     return directory, manifest
 
 
 def ledger(storage: Path) -> dict:
     path = safe_path(storage, "launches.json")
-    if not path.exists():
-        # Missing launch evidence must never enable a previously claimed run.
-        runs = safe_path(storage, "runs")
-        if runs.exists():
-            for directory in runs.iterdir():
-                if directory.is_dir() and RUN_ID.fullmatch(directory.name):
-                    _, manifest = read_manifest(storage, directory.name)
-                    if manifest.get("status") != "prepared":
-                        raise ResearchError("Launch ledger missing for existing launches; do not relaunch")
-        return {"schema_version": 1, "claims": {}}
-    value = read_json(path)
+    value = read_json(path) if path.exists() else {"schema_version": 1, "claims": {}}
     exact_keys(value, {"schema_version", "claims"}, "launch ledger")
-    if value["schema_version"] != 1 or not isinstance(value["claims"], dict):
+    if (type(value["schema_version"]) is not int or value["schema_version"] != 1
+            or not isinstance(value["claims"], dict)):
         raise ResearchError("Invalid launch ledger")
+    runs = safe_path(storage, "runs")
+    manifests = {}
+    if runs.exists():
+        for directory in runs.iterdir():
+            if directory.is_dir() and RUN_ID.fullmatch(directory.name):
+                _, manifest = read_manifest(storage, directory.name)
+                manifests[directory.name] = manifest
+    for run_id in value["claims"]:
+        if run_id not in manifests:
+            raise ResearchError(f"Corrupt launch ledger: claim has missing run evidence: {run_id}")
+    for run_id, manifest in manifests.items():
+        if manifest["status"] != "prepared" and run_id not in value["claims"]:
+            raise ResearchError(f"Corrupt launch ledger: executed run is missing its claim: {run_id}; do not relaunch")
+    # A prepared manifest with a claim is a valid unresolved crash window.
     return value
 
 
@@ -488,7 +510,8 @@ def stop_owned_process(process: subprocess.Popen) -> dict:
 def result_evidence(path: Path, primary_metric: str) -> dict:
     try:
         raw = path.read_bytes()
-        result = json.loads(raw.decode("utf-8"), parse_constant=reject_constant)
+        result = json.loads(raw.decode("utf-8"), parse_constant=reject_constant,
+                            object_pairs_hook=unique_json_object)
     except (OSError, ValueError) as exc:
         raise ResearchError(f"Cannot read JSON at {path}: {exc}") from exc
     if not isinstance(result, dict) or not isinstance(result.get("metrics"), dict):
@@ -511,6 +534,9 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         if run_id in launches["claims"] or manifest.get("status") != "prepared":
             raise ResearchError("This run already has a launch claim or is not prepared; inspect it. Never relaunch this id.")
         protocol = verify_snapshot(storage, directory, manifest)
+        active_protocol = validate_protocol(read_json(safe_path(storage, "protocol.json")))
+        if active_protocol["budget"] != protocol["budget"]:
+            raise ResearchError("Active execution budget differs from this prepared run; prepare a new run under the active budget before launching")
         if environment() != manifest["environment"]:
             raise ResearchError("Runtime environment changed since prepare; prepare a new run")
         if len(launches["claims"]) >= protocol["budget"]["max_runs"]:

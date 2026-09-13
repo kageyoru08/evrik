@@ -78,15 +78,21 @@ When invoked by the installed skill, Codex resolves the runner from that skill's
 
 The command sequence is `init`, `prepare`, `run`, `inspect`, and `compare`; each returns JSON. The project must be an existing Git repository root. `init --project PATH` creates `.research/protocol.json` without overwriting an existing protocol. Review the generated protocol, ignore `.research/` in the project's Git configuration, and commit the intended source before preparing a run. The runner does not edit `.gitignore` for you and rejects a dirty checkout.
 
+Prepared runs retain their recorded protocol. Before launching, the active protocol's execution budget must still match the prepared run's `max_runs` and `timeout_seconds`. If either limit changes, prepare a new run under the desired budget; an older prepared run cannot bypass that change. This check applies before launch and does not supervise later edits during an existing execution.
+
 The protocol defines the evaluator command, primary metric and direction, improvement threshold, declared data paths, comparison conditions, and run/time budget. Declared data paths refer to committed files in the snapshot. The command is an argument array with `{python}` and `{result}` substitutions; it is executed without implicit shell parsing. The evaluator writes its configured primary metric as a finite JSON number; any additional metrics must also be finite numbers:
 
 ```json
 {"metrics": {"mse": 0.125}}
 ```
 
+JSON object keys must be unique, including inside metrics. Conflicting duplicate keys are invalid evidence; the runner does not silently choose the last value. Protocols, manifests, and the launch ledger follow the same rule.
+
 See [experiment guidance](plugins/research-lab/skills/research/references/experiments.md) for the full workflow and [the skill](plugins/research-lab/skills/research/SKILL.md) for research behavior.
 
 Run records live in `.research/runs/`. Preparation captures committed code through `git archive` and records declared input identities. Identical inputs return the existing run record unless `--replicate` is explicitly requested; inspect its state before deciding what to do next. Each run ID permits one launch attempt, including failed or interrupted attempts. A launch claim conservatively consumes budget before process creation.
+
+The runner checks the ledger against recorded runs. A missing claim for a launched run or a claim without its run manifest is an integrity error that blocks further execution and comparison. Preserve the remaining files and reconcile the missing evidence; do not reset the ledger to regain budget. A claim with a still-prepared manifest remains an unresolved possible interruption between the two durable writes. Unsupported manifest versions and invalid recorded states are rejected with a JSON error.
 
 The evaluator must stay in the foreground, wait for its workers, and finish writing its result before returning. Detached jobs are unsupported. Source snapshots contain no Git repository; a runner-created `.git` boundary marker makes Git discovery fail explicitly, and inherited `GIT_*` settings are cleared. This also works when the project name contains a path-list separator. Evaluators needing source identity can read `RESEARCH_SOURCE_COMMIT` and `RESEARCH_SOURCE_ROOT` from their environment. A Git-dependent evaluator must adapt to this contract instead of reading the live checkout.
 

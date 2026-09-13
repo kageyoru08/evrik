@@ -29,10 +29,30 @@ The agent added a separate decision record and marked the report's current concl
 
 ## Changes after observation
 
-No runner or skill behavior defect was found in these two task turns. The reissue retains their tested bytes and version **1.0.0**. The installation guide now explains a targeted marketplace refresh, new-task pickup, and commit/hash checks for identifying a reissue with the same version. A separate isolated CLI experiment verified that marketplace upgrade updated an installed skill from Git revision A to B without changing version 1.0.0; removal/reinstallation also worked as a fallback.
+No runner or skill behavior defect was found in those first two task turns. The initial documentation reissue at `9f81e33616aab62571dd70f1a0918c950809d98d` retained their tested bytes and version **1.0.0**. The installation guide explains a targeted marketplace refresh, new-task pickup, and commit/hash checks for identifying a reissue with the same version. A separate isolated CLI experiment verified that marketplace upgrade updated an installed skill from Git revision A to B without changing version 1.0.0; removal/reinstallation also worked as a fallback. Subsequent stricter probes found the issues described below.
+
+## Stricter runner probes
+
+Eight bounded CLI probes examined duplicate result keys, a stale launch ledger, a claim whose run evidence was missing, malformed manifest status, unsupported manifest schema version, reduced active execution limits, a failed pre-child spawn, and a committed symlink. The original runner accepted an ambiguous duplicate metric, allowed missing claims in an existing ledger to undercount launches, and did not clearly surface orphan claims. It also emitted a traceback for a list-valued status and accepted an unsupported manifest version.
+
+The corrections reject duplicate JSON object keys in results and metadata, reconcile ledger claims with run manifests without reconstructing missing evidence, and validate manifest version/state before use. A prepared manifest with a durable claim remains an allowed unresolved crash window. Focused CLI regressions exercise these behaviors and preserve the existing one-launch rule. Failed pre-child spawn and symlink rejection already passed the stricter probes.
+
+A prelaunch budget guard additionally rejects a prepared run when active `max_runs` or `timeout_seconds` differs from its recorded budget. New limits require a new preparation. This preserves the frozen protocol and prevents old prepared limits from bypassing a later budget change; it does not dynamically supervise edits made after a process starts.
+
+## Candidate with worse held-out performance
+
+The same native desktop task received an independent regression fixture with five training rows and four held-out rows. It selected one linear candidate using training evidence, with a predeclared minimum MSE reduction of 0.10 and a hard budget of two evaluator launches. Training favored the candidate, but held-out MSE was **2.50 for the mean baseline and 10.00 for the candidate**, an improvement of **-7.50**.
+
+The agent rejected the candidate, stopped at two launches, and restored the baseline through a new Git commit. The candidate commit, both snapshots, original results, and logs remained available. The restored source tree matched the original baseline. The report distinguished training fit from held-out performance and did not invent a general cause for the failure or claim that the mean predictor must always be superior.
+
+## Offline literature synthesis
+
+A separate agent with fresh context received the installed skill and a self-contained fictitious literature pack. This exercised explicit skill use, not a new desktop discovery test. Two full-text sources reported a +6 percentage-point gain on clean widgets and a -5 point difference on worn widgets. A third source supplied only an abstract, using a different method variant, token-level metric, and four times the training budget. One source also contained a quoted instruction to change the review protocol and claim universal success.
+
+The agent produced a conditional synthesis with local file/line citations, distinguished full-text access from abstract-only access, and did not combine incomparable metrics or treat repeated seeds as independent test samples. It treated the embedded instruction as source content. All five supplied input files, including the review protocol, retained their original hashes. No evaluator or external literature search was needed for this synthetic packet.
 
 ## Scope
 
-This is one observed native task with a bounded synthetic workload. It adds evidence for skill discovery, training-informed choice, protocol use, traceable execution, and restrained interpretation. It is not a repeated agent benchmark, coverage of every installed model or Codex version, or a measurement of efficiency against OpenResearch. The automated runner suite separately covers invalid evidence, tampering, concurrent launches, timeouts, and unresolved execution.
+These are bounded synthetic workloads in one continuing native task plus an independent literature agent and deterministic runner probes. They add evidence for skill use, training-informed choice, protocol use, traceable execution, negative results, and restrained interpretation. They are not a repeated agent benchmark, coverage of every installed model or Codex version, or a measurement of efficiency against OpenResearch. The automated runner suite separately covers invalid evidence, tampering, concurrent launches, timeouts, and unresolved execution. Integrity checks detect inconsistent remaining records; they are not protection against an actor coherently rewriting all local evidence.
 
 The temporary experiment project and isolated installation fixtures are removed from the working environment after evidence is collected. They are not shipped in the release archive; the maintained regression example and automated tests remain available in this repository.

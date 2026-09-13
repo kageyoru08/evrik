@@ -69,6 +69,117 @@ class RunnerTests(unittest.TestCase):
         self.invoke("prepare", "--label", "dirty", expected=2)
         self.assertEqual(command(self.project, "inspect")["runs"], [])
 
+    def test_duplicate_json_keys_are_rejected_in_every_evidence_document(self):
+        protocol_path = self.project / ".research/protocol.json"
+        original_protocol = protocol_path.read_text(encoding="utf-8")
+        protocol_path.write_text(original_protocol.rstrip()[:-1] + ',"name":"ambiguous"}', encoding="utf-8")
+        self.invoke("prepare", "--label", "duplicate-protocol", expected=2)
+        self.assertEqual(command(self.project, "inspect")["runs"], [])
+        protocol_path.write_text(original_protocol, encoding="utf-8")
+        baseline = self.prepare("valid-json")
+        command(self.project, "run", "--id", baseline)
+        payload = '{"metrics":{"mse":100,"mse":0}}'
+        self.commit_file("evaluate.py", "import sys\nfrom pathlib import Path\nPath(sys.argv[2]).write_text(" + repr(payload) + ", encoding='utf-8')\n")
+        candidate = self.prepare("duplicate-result")
+        result = self.invoke("run", "--id", candidate, expected=1)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["evidence"]["status"], "invalid")
+        self.assertIn("Duplicate JSON", result["evidence"]["reason"])
+        self.invoke("compare", "--baseline", baseline, "--candidate", candidate, expected=2)
+        for path in (self.project / ".research/launches.json", self.run_path(baseline) / "manifest.json"):
+            with self.subTest(document=path.name):
+                original = path.read_text(encoding="utf-8")
+                path.write_text(original.rstrip()[:-1] + ',"schema_version":1}', encoding="utf-8")
+                try:
+                    failure = self.invoke("inspect", expected=2)
+                    self.assertIn("Duplicate JSON", failure["error"])
+                finally:
+                    path.write_text(original, encoding="utf-8")
+
+    def test_ledger_reconciliation_rejects_loss_and_preserves_crash_claims(self):
+        self.protocol(lambda p: p["budget"].update(max_runs=1))
+        first = self.prepare("launched")
+        second = self.prepare("unlaunched", "--replicate")
+        command(self.project, "run", "--id", first)
+        ledger_path = self.project / ".research/launches.json"
+        original_ledger = ledger_path.read_text(encoding="utf-8")
+        ledger_path.write_text('{"schema_version":1,"claims":{}}', encoding="utf-8")
+        try:
+            failure = self.invoke("run", "--id", second, expected=2)
+            self.assertIn("missing its claim", failure["error"])
+            self.invoke("inspect", expected=2)
+            self.assertFalse((self.run_path(second) / "run.log").exists())
+        finally:
+            ledger_path.write_text(original_ledger, encoding="utf-8")
+        directory = self.run_path(first)
+        held = directory.with_name(directory.name + ".held")
+        self.assertTrue(directory.resolve().is_relative_to(self.project.resolve()))
+        self.assertTrue(held.resolve().is_relative_to(self.project.resolve()))
+        directory.rename(held)
+        try:
+            failure = self.invoke("inspect", expected=2)
+            self.assertIn("missing run evidence", failure["error"])
+            self.invoke("run", "--id", second, expected=2)
+        finally:
+            held.rename(directory)
+        # A durable claim may precede the manifest's transition out of prepared.
+        crash_ledger = json.loads(original_ledger)
+        crash_ledger["claims"][second] = {"claimed_at": "2026-01-01T00:00:00+00:00"}
+        ledger_path.write_text(json.dumps(crash_ledger), encoding="utf-8")
+        inspected = command(self.project, "inspect", "--id", second)
+        self.assertEqual(inspected["status"], "prepared")
+        self.assertTrue(inspected["launch_claimed"])
+        self.assertTrue(inspected["unresolved"])
+        self.invoke("run", "--id", second, expected=2)
+        self.assertFalse((self.run_path(second) / "run.log").exists())
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 2)
+
+    def test_manifest_status_and_schema_versions_fail_with_json_errors(self):
+        baseline = self.prepare("baseline")
+        candidate = self.prepare("candidate", "--replicate")
+        for run_id in (baseline, candidate):
+            command(self.project, "run", "--id", run_id)
+        path = self.run_path(candidate) / "manifest.json"
+        original = path.read_text(encoding="utf-8")
+        for field, value in (("status", []), ("status", "future-state"),
+                             ("schema_version", True), ("schema_version", 999)):
+            with self.subTest(field=field, value=value):
+                changed = json.loads(original)
+                changed[field] = value
+                path.write_text(json.dumps(changed), encoding="utf-8")
+                try:
+                    self.invoke("inspect", "--id", candidate, expected=2)
+                    self.invoke("compare", "--baseline", baseline, "--candidate", candidate, expected=2)
+                finally:
+                    path.write_text(original, encoding="utf-8")
+        ledger_path = self.project / ".research/launches.json"
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        ledger["schema_version"] = True
+        ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+        self.invoke("inspect", expected=2)
+
+    def test_changed_active_execution_caps_require_new_preparation(self):
+        original_budget = json.loads((self.project / ".research/protocol.json").read_text(encoding="utf-8"))["budget"]
+        run_id = self.prepare("prepared-budget")
+        for change in ({"max_runs": 1}, {"timeout_seconds": 0.01}):
+            with self.subTest(changed_cap=change):
+                self.protocol(lambda p: p.update(budget={**original_budget, **change}))
+                failure = self.invoke("run", "--id", run_id, expected=2)
+                self.assertIn("prepare a new run", failure["error"])
+                self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 0)
+                self.assertEqual(command(self.project, "inspect", "--id", run_id)["status"], "prepared")
+                self.assertFalse((self.run_path(run_id) / "run.log").exists())
+                self.assertFalse((self.run_path(run_id) / "result.json").exists())
+        # Scientific metadata stays frozen; only changed execution caps block launch.
+        self.protocol(lambda p: p.update(budget=original_budget, question="A changed active research question"))
+        completed = command(self.project, "run", "--id", run_id)
+        self.assertEqual(completed["status"], "completed")
+        self.assertNotEqual(completed["protocol"]["question"], "A changed active research question")
+        self.protocol(lambda p: p["budget"].update(max_runs=2))
+        fresh = self.prepare("new-active-budget")
+        command(self.project, "run", "--id", fresh)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 2)
+
     def test_git_discovery_cannot_attribute_live_checkout_data_to_snapshot(self):
         self.project = make_project(Path(self.temporary.name) / ("git" + os.pathsep + "project"))
         other = make_project(Path(self.temporary.name) / "other-project")

@@ -36,6 +36,8 @@ compare --project PATH --baseline ID --candidate ID
 
 `prepare` snapshots committed code using `git archive` and records the protocol, declared data identities, and execution identity in `.research/runs/`. Identical inputs return an existing run record; inspect its state and use `prepare ... --replicate` only when a fresh repeated trial is intended. Retain the returned run ID. A later change in the working checkout does not change a prepared run's code snapshot.
 
+The active protocol's `budget` must match the prepared budget before launch. Changing `max_runs` or `timeout_seconds` requires a new preparation under the active limits; running an older prepared ID will be rejected. The recorded scientific protocol stays frozen. This prelaunch check does not change an already running evaluator's limits.
+
 The source archive does not make undeclared inputs, external services, or host dependencies reproducible. Declare relevant inputs, keep evaluation code inspectable, and document remaining environment assumptions.
 
 The snapshot has no Git repository. The runner adds an explanatory `.git` boundary marker with deliberately invalid Git-file format and clears inherited `GIT_*` settings. Ordinary Git discovery therefore fails at the snapshot, including in paths containing `:` on POSIX or `;` on Windows, instead of finding the live parent. Keep the boundary marker intact. Adapt Git-dependent evaluators to use the frozen `RESEARCH_SOURCE_COMMIT` and `RESEARCH_SOURCE_ROOT` environment values when sufficient. Read data relative to the captured source. This boundary prevents accidental Git discovery; it does not restrict trusted code from explicitly accessing other paths.
@@ -50,9 +52,13 @@ The snapshot has no Git repository. The runner adds an explanatory `.git` bounda
 
 The primary metric must be present, and all values in `metrics` must be finite numbers. Treat missing or malformed results as invalid evidence even if the process returned zero. Run timeouts and failures remain part of the record. Integer-only arithmetic stays exact; floating-point comparisons use Python's binary floating-point arithmetic with no implicit tolerance. Mixed integer/float comparisons reject integers that are not exactly float-representable, and nonfinite arithmetic is rejected.
 
+Duplicate JSON object keys are rejected in results and research metadata. Do not choose one of two conflicting values or rewrite an ambiguous result into valid evidence.
+
 Use a foreground evaluator that waits for all its workers and finalizes `{result}` before returning. Detached jobs and background result writers are unsupported. Read and hash completed evidence after the writer has finished; keep the original result and log immutable.
 
 One run ID permits one launch attempt. The budget conservatively consumes the launch claim before process creation so a crash cannot authorize a duplicate launch. Do not alter a manifest to bypass that rule. Use `inspect` before resuming and whenever execution is uncertain. `launching`, `running`, failed, timed-out, and interrupted executions require reconciliation; a failed evaluator can leave ordinary foreground workers alive, and cleanup observations do not prove every descendant stopped. Pre-child `launch_failed` is separately resolvable when no child was created. Inspection does not infer completion from a persisted PID or silently relaunch. Reconcile the actual execution in project notes before deciding on a separate explicitly replicated run.
+
+A stale ledger missing a launched run's claim, a claim with missing run evidence, or an unsupported/invalid manifest produces an integrity error. Preserve the available records and explain what is missing; do not recreate or discard claims automatically. A claim paired with a prepared manifest is a recognized unresolved crash window, not permission to retry.
 
 The runner is synchronous and is not a durable service. A prompt or skill cannot guarantee supervision after Codex or its host stops. Schedule follow-up only through an available native facility when the user requests it, without treating a reminder as process supervision.
 
