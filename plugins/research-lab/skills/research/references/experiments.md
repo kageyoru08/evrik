@@ -21,6 +21,8 @@ List files whose content must stay fixed between the baseline and candidate. Kee
 
 Inspect runner validation errors for the exact accepted values. Additional scientific decisions belong in research notes when they have no executable representation. Matching metadata is a necessary operational check, not proof that the evaluator obeyed the design.
 
+When the runner reports an environment, ownership, or permission error, preserve and report the concrete blocker. Do not change host/Git security configuration, invent trust entries, or switch to broader permissions to work around it. Continue independent authorized work. Route genuinely required protected actions through their native, action-specific user approval request.
+
 ## Prepare attributable source
 
 Use an existing Git repository root. Initialize with `init --project PATH`; ensure `.research/` is ignored before preparation. The runner reports this requirement and does not change `.gitignore`. Commit the intended source and any ignore-file change after reviewing the diff. `prepare` requires a clean checkout and rejects uncommitted or untracked source changes.
@@ -41,6 +43,8 @@ compare --project PATH --baseline ID --candidate ID
 The active protocol's `budget` must match the prepared budget before launch. Changing `max_runs` or `timeout_seconds` requires a new preparation under the active limits; running an older prepared ID will be rejected. The recorded scientific protocol stays frozen. This prelaunch check does not change an already running evaluator's limits.
 
 The source archive does not make undeclared inputs, external services, or host dependencies reproducible. Declare relevant inputs, keep evaluation code inspectable, and document remaining environment assumptions.
+
+Live Git operations retain the caller's indexed `safe.directory` ownership context while discarding repository-routing overrides. Mixed environment configuration channels or includes are unsupported and produce an error; the runner does not rewrite the caller's Git configuration. Evaluator children still receive no inherited `GIT_*` settings.
 
 The snapshot has no Git repository. The runner adds an explanatory `.git` boundary marker with deliberately invalid Git-file format and clears inherited `GIT_*` settings. Ordinary Git discovery therefore fails at the snapshot, including in paths containing `:` on POSIX or `;` on Windows, instead of finding the live parent. Keep the boundary marker intact. Adapt Git-dependent evaluators to use the frozen `RESEARCH_SOURCE_COMMIT` and `RESEARCH_SOURCE_ROOT` environment values when sufficient. Read data relative to the captured source. This boundary prevents accidental Git discovery; it does not restrict trusted code from explicitly accessing other paths.
 

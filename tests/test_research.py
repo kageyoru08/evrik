@@ -318,7 +318,9 @@ class RunnerTests(unittest.TestCase):
         self.protocol(lambda p: p["data_paths"].append("live_metric.txt"))
         # Inherited routing must not override the runner's explicit --project.
         inherited = dict(os.environ, GIT_DIR=str(other / ".git"), GIT_WORK_TREE=str(other),
-                         RESEARCH_UNRELATED="preserved")
+                         RESEARCH_UNRELATED="preserved", GIT_CONFIG_COUNT="2",
+                         GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0=str(self.project),
+                         GIT_CONFIG_KEY_1="safe.directory", GIT_CONFIG_VALUE_1=str(self.project) + "/*")
         prepared = subprocess.run(
             [sys.executable, str(RUNNER), "prepare", "--project", str(self.project), "--label", "git-aware"],
             env=inherited, capture_output=True, text=True, timeout=15,

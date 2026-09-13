@@ -16,6 +16,7 @@ import json
 import math
 import os
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
@@ -61,7 +62,7 @@ class InputBoundaryTests(unittest.TestCase):
         proc = subprocess.run(
             [sys.executable, "-X", "utf8", "-B", str(RUNNER), operation,
              "--project", str(self.project), *args],
-            capture_output=True, text=True, encoding="utf-8", timeout=30,
+            capture_output=True, text=True, encoding="utf-8", timeout=30, env=dict(os.environ),
         )
         self.assertEqual(proc.returncode, expected, proc.stderr or proc.stdout)
         self.assertNotIn("Traceback", proc.stderr)
@@ -72,6 +73,100 @@ class InputBoundaryTests(unittest.TestCase):
 
     def prepare(self, label="boundary", *extra):
         return self.invoke("prepare", "--label", label, *extra)["id"]
+
+    def test_live_git_keeps_inherited_trust_without_routing_or_child_leaks(self):
+        runner = runpy.run_path(str(RUNNER), run_name="runner_under_test")
+        alternate = make_project(self.root / "unrelated repository")
+        original = (self.project / "evaluate.py").read_text(encoding="utf-8")
+        self.commit_file("evaluate.py", "import os\nassert not any(k.upper().startswith('GIT_') for k in os.environ)\n" + original)
+        values = [str(alternate), "", str(self.project), str(self.project) + "/*"]
+        environment = {
+            "GIT_CONFIG_COUNT": "5", "GIT_DIR": str(alternate / ".git"),
+            "GIT_WORK_TREE": str(alternate),
+            "GIT_CONFIG_KEY_4": "researchlab.should-not-survive",
+            "GIT_CONFIG_VALUE_4": "discard-this-injected-setting",
+        }
+        for index, value in enumerate(values):
+            environment[f"GIT_CONFIG_KEY_{index}"] = "safe.directory" if index != 2 else "SAFE.directory"
+            environment[f"GIT_CONFIG_VALUE_{index}"] = value
+        with patch.dict(os.environ, environment):
+            actual = runner["git"](self.project, "config", "--get-all", "safe.directory").decode("utf-8").splitlines()
+            self.assertEqual(actual[-len(values):], values)
+            with self.assertRaises(runner["ResearchError"]):
+                runner["git"](self.project, "config", "--get", "researchlab.should-not-survive")
+            top = runner["git"](self.project, "rev-parse", "--show-toplevel").decode().strip()
+            self.assertEqual(Path(top).resolve(), self.project.resolve())
+            self.assertTrue(runner["ignored"](self.project))
+            run_id = self.prepare("native trust context")
+            result = self.invoke("run", "--id", run_id)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(self.marker.read_text(encoding="utf-8").splitlines()), 1)
+
+    def test_live_git_environment_preserves_only_active_ordered_trust(self):
+        runner = runpy.run_path(str(RUNNER), run_name="runner_under_test")
+        inherited = {"RESEARCH_UNRELATED": "unchanged", "GIT_DIR": "elsewhere",
+                     "GIT_CONFIG_COUNT": "0005", "GIT_CONFIG_KEY_0": "SAFE.directory",
+                     "GIT_CONFIG_VALUE_0": " first path ", "GIT_CONFIG_KEY_1": "other.setting",
+                     "GIT_CONFIG_VALUE_1": "discard", "GIT_CONFIG_KEY_2": "safe.directory",
+                     "GIT_CONFIG_VALUE_2": "", "GIT_CONFIG_KEY_3": "safe.directory",
+                     "GIT_CONFIG_VALUE_3": "repo/*", "GIT_CONFIG_KEY_4": "safe.directory",
+                     "GIT_CONFIG_VALUE_4": "repo/*", "GIT_CONFIG_KEY_9": "safe.directory",
+                     "GIT_CONFIG_VALUE_9": "*"}
+        expected = {"RESEARCH_UNRELATED": "unchanged", "GIT_CONFIG_COUNT": "4"}
+        for index, value in enumerate([" first path ", "", "repo/*", "repo/*"]):
+            expected[f"GIT_CONFIG_KEY_{index}"] = "safe.directory"
+            expected[f"GIT_CONFIG_VALUE_{index}"] = value
+        with patch.dict(os.environ, inherited, clear=True):
+            self.assertEqual(runner["live_git_environment"](), expected)
+            self.assertEqual(runner["without_git_environment"](), {"RESEARCH_UNRELATED": "unchanged"})
+        for count in (None, "", "0"):
+            case = dict(inherited)
+            case.pop("GIT_CONFIG_COUNT")
+            if count is not None:
+                case["GIT_CONFIG_COUNT"] = count
+            with self.subTest(inactive_count=count), patch.dict(os.environ, case, clear=True):
+                self.assertEqual(runner["live_git_environment"](), {"RESEARCH_UNRELATED": "unchanged"})
+        lowercase = {"git_config_count": "1", "git_config_key_0": "safe.directory",
+                     "git_config_value_0": "repo"}
+        with patch.dict(os.environ, lowercase, clear=True):
+            outgoing = runner["live_git_environment"]()
+            self.assertEqual(outgoing, {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
+                                       "GIT_CONFIG_VALUE_0": "repo"} if os.name == "nt" else lowercase)
+
+    def test_live_git_rejects_malformed_and_mixed_trust_configuration(self):
+        runner = runpy.run_path(str(RUNNER), run_name="runner_under_test")
+        valid = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": "repo"}
+        cases = [dict(valid, GIT_CONFIG_COUNT=value)
+                 for value in ("-1", "+1", " 1", "1.0", "١", "9" * 5000, "2")]
+        cases += [{key: value for key, value in valid.items() if key != missing}
+                  for missing in ("GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")]
+        cases.append(dict(valid, GIT_CONFIG_KEY_0=""))
+        for name in ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+                     "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG"):
+            cases.append(dict(valid, **{name: "'safe.directory'=''"}))
+        for key in ("include.path", "includeIf.gitdir:repo.path", "INCLUDE.path"):
+            cases.append(dict(valid, GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_1=key,
+                              GIT_CONFIG_VALUE_1="other-config"))
+        for index, case in enumerate(cases):
+            with self.subTest(case=index), patch.dict(os.environ, case, clear=True):
+                with self.assertRaises(runner["ResearchError"]):
+                    runner["live_git_environment"]()
+        before = self.inventory()
+        with patch.dict(os.environ, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="", GIT_CONFIG_VALUE_0="x"):
+            self.invoke("inspect", expected=2)
+        self.assertEqual(self.inventory(), before)
+        self.assert_no_execution()
+
+    def test_check_ignore_distinguishes_not_ignored_from_git_failure(self):
+        runner = runpy.run_path(str(RUNNER), run_name="runner_under_test")
+        for status, expected in ((0, True), (1, False), (128, None)):
+            with self.subTest(status=status), patch.object(subprocess, "run", return_value=
+                    subprocess.CompletedProcess([], status, b"", b"fatal fixture")):
+                if expected is None:
+                    with self.assertRaisesRegex(runner["ResearchError"], "Git check-ignore failed"):
+                        runner["ignored"](self.project)
+                else:
+                    self.assertEqual(runner["ignored"](self.project), expected)
 
     def run_path(self, run_id):
         return self.project / ".research/runs" / run_id

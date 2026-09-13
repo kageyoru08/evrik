@@ -171,11 +171,48 @@ def without_git_environment() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
 
 
+def live_git_environment() -> dict[str, str]:
+    # Native Windows sandbox accounts inherit ownership context, not repo routing.
+    inherited = {(key.upper() if os.name == "nt" else key): value
+                 for key, value in os.environ.items()}
+    result = {key: value for key, value in os.environ.items()
+              if not (key.upper() if os.name == "nt" else key).startswith("GIT_")}
+    # Replaying only part of these channels can discard a later trust reset.
+    unsupported = {"GIT_CONFIG_PARAMETERS", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+                   "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG"}
+    if unsupported.intersection(inherited):
+        raise ResearchError("Unsupported mixed Git configuration environment; preserve the caller configuration and report the blocker")
+    raw_count = inherited.get("GIT_CONFIG_COUNT", "")
+    if not raw_count:
+        return result
+    digits = raw_count.lstrip("0") or "0"
+    if (not re.fullmatch(r"[0-9]+", raw_count)
+            or len(digits) > len(str(len(inherited))) or int(digits) > len(inherited) // 2):
+        raise ResearchError("Invalid GIT_CONFIG_COUNT in caller environment")
+    values = []
+    for index in range(int(digits)):
+        key = inherited.get(f"GIT_CONFIG_KEY_{index}")
+        value = inherited.get(f"GIT_CONFIG_VALUE_{index}")
+        if not key or value is None:
+            raise ResearchError(f"Missing Git configuration key or value at index {index}")
+        lowered = key.lower()
+        if lowered.startswith(("include.", "includeif.")):
+            raise ResearchError("Unsupported Git configuration include in caller environment")
+        if key.isascii() and lowered == "safe.directory":
+            values.append(value)
+    if values:
+        result["GIT_CONFIG_COUNT"] = str(len(values))
+        for index, value in enumerate(values):
+            result[f"GIT_CONFIG_KEY_{index}"] = "safe.directory"
+            result[f"GIT_CONFIG_VALUE_{index}"] = value
+    return result
+
+
 def git(project: Path, *args: str) -> bytes:
     try:
         result = subprocess.run(["git", "-C", str(project), *args], shell=False,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                timeout=60, check=False, env=without_git_environment())
+                                timeout=60, check=False, env=live_git_environment())
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ResearchError(f"Git unavailable or timed out: {exc}") from exc
     if result.returncode:
@@ -202,7 +239,9 @@ def project_paths(argument: str, create: bool = False) -> tuple[Path, Path]:
 def ignored(project: Path) -> bool:
     result = subprocess.run(["git", "-C", str(project), "check-ignore", "-q", ".research/"],
                             shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            timeout=30, env=without_git_environment())
+                            timeout=30, env=live_git_environment())
+    if result.returncode not in (0, 1):
+        raise ResearchError("Git check-ignore failed: " + result.stderr.decode("utf-8", "replace").strip())
     return result.returncode == 0
 
 
