@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import runpy
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -266,8 +267,14 @@ class InputBoundaryTests(unittest.TestCase):
                     archive.writestr(entry, contents)
         raw = output.getvalue()
         with zipfile.ZipFile(io.BytesIO(raw)) as check:
-            expected_names = [entry.orig_filename for entry, _ in members] + [name for name, _ in extra_members]
+            expected_names = [entry.orig_filename for entry, _ in members] + [
+                name.orig_filename if isinstance(name, zipfile.ZipInfo) else name for name, _ in extra_members]
             self.assertEqual([entry.orig_filename for entry in check.infolist()], expected_names)
+            for entry, _ in extra_members:
+                if isinstance(entry, zipfile.ZipInfo):
+                    stored = check.getinfo(entry.filename)
+                    self.assertEqual((stored.create_system, stored.external_attr),
+                                     (entry.create_system, entry.external_attr))
         archive_path.write_bytes(raw[:len(raw) // 2] if truncated else raw)
         manifest_path = directory / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -305,6 +312,14 @@ class InputBoundaryTests(unittest.TestCase):
             ("file parent overlap", [("occupied", b"file"), ("occupied/child", b"child")], "overlaps"),
             ("file directory overlap", [("occupied/", b""), ("occupied", b"file")], "Duplicate"),
         ])
+        # Safe names reach the ZIP member-type consumer, independently of the
+        # prepare-time Git symlink/submodule guard. No special OS file is made.
+        for label, kind in (("symlink", stat.S_IFLNK), ("character device", stat.S_IFCHR),
+                            ("fifo", stat.S_IFIFO)):
+            entry = zipfile.ZipInfo("typed-member-" + label.replace(" ", "-"))
+            entry.create_system = 3  # Unix mode bits, including on Windows.
+            entry.external_attr = (kind | 0o600) << 16
+            cases.append((label, [(entry, str(self.canary).encode("utf-8"))], "Unsupported snapshot file"))
         self.protocol(lambda p: p["budget"].update(max_runs=len(cases)))
         for label, entries, reason in cases:
             with self.subTest(archive=label):
