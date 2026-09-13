@@ -1,0 +1,21 @@
+{
+  "name": "research-lab",
+  "version": "1.0.0",
+  "description": "Evidence-led research and reproducible local experiments using native Codex tools.",
+  "author": {
+    "name": "Kageyoru",
+    "url": "https://github.com/kageyoru08"
+  },
+  "repository": "https://github.com/kageyoru08/research-lab",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Research Lab",
+    "shortDescription": "Research with traceable experiments and evidence.",
+    "longDescription": "Use native Codex agents, Git and tools to investigate questions, run committed experiments, compare valid evidence and resume from durable records.",
+    "developerName": "Kageyoru",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use $research to plan and run a small reproducible experiment in this project."
+  }
+}
