@@ -75,6 +75,181 @@ class InputBoundaryTests(unittest.TestCase):
     def prepare(self, label="boundary", *extra):
         return self.invoke("prepare", "--label", label, *extra)["id"]
 
+    def registered_review(self):
+        note = self.project / ".research/history.md"
+        note.write_bytes(b"Preserve the committed evaluator before another launch.\n")
+        (self.project / ".research/reference.py").write_bytes((self.project / "evaluate.py").read_bytes())
+        unit = self.invoke("reconcile", "--note", ".research/history.md")["coverage"][0]["id"]
+        self.invoke("reconcile", "--unit", unit, "--disposition", "verify", "--rationale", "Check the inherited evaluator.",
+                    "--reference", ".research/reference.py", "--current", "evaluate.py")
+        return unit
+
+    def test_reconciliation_path_and_range_inputs_cannot_escape_or_activate_empty_review(self):
+        before = self.inventory()
+        self.invoke("reconcile", "--unit", "invented", "--disposition", "context",
+                    "--rationale", "No source was registered.", expected=2)
+        self.assertEqual(self.inventory(), before)
+        for name in (str(self.canary), "../outside-canary.txt", "nested/../../outside-canary.txt",
+                     ".git/config", ".research/reconciliation/review.json", "nested\\note.md"):
+            with self.subTest(path=name):
+                self.invoke("reconcile", "--note", name, expected=2)
+                self.assertEqual(self.inventory(), before)
+        unit = self.registered_review()
+        for extra in (("--reference", "../outside-canary.txt"), ("--current", ".git/config"),
+                      ("--current-range", "-1:2"), ("--current-range", "0:999999"),
+                      ("--reference-range", "1:1"), ("--reference-revision", "--help")):
+            with self.subTest(selector=extra):
+                before = self.inventory()
+                argv = ["--reference", ".research/reference.py", "--current", "evaluate.py"]
+                if extra[0] in argv:
+                    index = argv.index(extra[0])
+                    argv[index:index + 2] = extra
+                else:
+                    argv.extend(extra)
+                argv = [argv[index] + "=" + argv[index + 1] for index in range(0, len(argv), 2)]
+                self.invoke("reconcile", "--unit", unit, "--disposition", "verify", "--rationale", "Invalid selector control.",
+                            *argv, expected=2)
+                self.assertEqual(self.inventory(), before)
+        self.assert_no_execution()
+
+    def test_reconciliation_missing_stale_and_invalid_receipts_refuse_without_claim_effects(self):
+        self.registered_review()
+        run_id = self.prepare("registered-snapshot")
+        path = self.project / ".research/reconciliation/review.json"
+        original = path.read_bytes()
+        envelope = json.loads(original)
+        cases = [None, original[:len(original) // 2]]
+        for field, value in (("sources", []), ("events", []), ("events", None), ("id", [])):
+            changed = json.loads(original)
+            changed["review"][field] = value
+            changed["sha256"] = identity(changed["review"])
+            cases.append(json.dumps(changed).encode("utf-8"))
+        cases.append(json.dumps(dict(envelope, sha256="0" * 64)).encode("utf-8"))
+        changed = json.loads(original)
+        changed["review"]["events"][0]["observation"]["equal"] = False
+        changed["sha256"] = identity(changed["review"])
+        cases.append(json.dumps(changed).encode("utf-8"))
+        for value in cases:
+            with self.subTest(record=value is None), self.altered_file(path, value):
+                before = self.inventory()
+                self.invoke("prepare", "--label", "invalid-review", expected=2)
+                self.invoke("run", "--id", run_id, expected=2)
+                self.assertEqual(self.inventory(), before)
+                self.assert_no_execution()
+        reference = self.project / ".research/reference.py"
+        with self.altered_file(reference, b"changed reference\n"):
+            before = self.inventory()
+            self.assertIn("Stale reconciliation reference", self.invoke("run", "--id", run_id, expected=2)["error"])
+            self.assertEqual(self.inventory(), before)
+            self.assert_no_execution()
+        manifest = self.run_path(run_id) / "manifest.json"
+        changed = json.loads(manifest.read_bytes())
+        changed["reconciliation"]["sha256"] = "0" * 64
+        with self.altered_file(manifest, json.dumps(changed).encode("utf-8")):
+            before = self.inventory()
+            self.invoke("run", "--id", run_id, expected=2)
+            self.assertEqual(self.inventory(), before)
+            self.assert_no_execution()
+
+    def test_reconciliation_interrupted_atomic_publication_preserves_previous_evidence(self):
+        unit = self.registered_review()
+        run_id = self.prepare("before-publication-failure")
+        path = self.project / ".research/reconciliation/review.json"
+        original = path.read_bytes()
+        ready, release = self.root / "review-ready", self.root / "review-release"
+        wrapper = self.root / "review_barrier.py"
+        wrapper.write_text(
+            "import importlib.util,os,sys,time\nfrom pathlib import Path\n"
+            f"spec = importlib.util.spec_from_file_location('tested_runner', {str(RUNNER)!r})\n"
+            "runner = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(runner)\n"
+            "real_replace = os.replace\n"
+            "def held_replace(source, destination):\n"
+            " if Path(destination).name == 'review.json':\n"
+            f"  Path({str(ready)!r}).write_text('ready')\n"
+            "  deadline = time.monotonic() + 15\n"
+            f"  while not Path({str(release)!r}).exists():\n"
+            "   if time.monotonic() > deadline: raise RuntimeError('Test release missing')\n"
+            "   time.sleep(0.01)\n"
+            " return real_replace(source, destination)\n"
+            "os.replace = held_replace\nraise SystemExit(runner.main())\n", encoding="utf-8")
+        process = subprocess.Popen(
+            [sys.executable, "-B", str(wrapper), "reconcile", "--project", str(self.project), "--unit", unit,
+             "--disposition", "unresolved", "--rationale", "Controlled interrupted reclassification."],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(ready.exists(), "The real flushed review temporary was not reached")
+            process.kill()
+            process.communicate(timeout=5)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertTrue(list(path.parent.glob(".review.json.*.tmp")))
+            self.assertEqual(self.invoke("run", "--id", run_id)["status"], "completed")
+        finally:
+            release.write_text("release", encoding="utf-8")
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+
+    def test_lost_registration_directory_cannot_reenter_as_a_legacy_project(self):
+        self.registered_review()
+        run_id = self.prepare("retained-registration-receipt")
+        directory = self.project / ".research/reconciliation"
+        held = self.project / ".research/held-reconciliation"
+        self.assertTrue(directory.resolve().is_relative_to(self.project.resolve()))
+        self.assertTrue(held.resolve().is_relative_to(self.project.resolve()))
+        directory.rename(held)
+        try:
+            original = self.inventory()
+            for action, arguments in (("prepare", ("--label", "cannot-drop-known-history")),
+                                      ("run", ("--id", run_id)),
+                                      ("reconcile", ("--note", ".research/history.md"))):
+                with self.subTest(action=action):
+                    failure = self.invoke(action, *arguments, expected=2)
+                    self.assertIn("retained run receipts prove prior registration", failure["error"])
+                    self.assertEqual(self.inventory(), original)
+                    self.assert_no_execution()
+        finally:
+            held.rename(directory)
+        self.assertEqual(self.invoke("run", "--id", run_id)["status"], "completed")
+
+    def test_reconciliation_unicode_json_survives_legacy_stdout_encoding(self):
+        original = "前の較正を保持する。\n\nCafé evidence remains historical.\n"
+        (self.project / ".research/history.md").write_bytes(original.encode("utf-8"))
+        with patch.dict(os.environ, PYTHONIOENCODING="cp1252"):
+            review = self.invoke("reconcile", "--note", ".research/history.md")
+            inspected = self.invoke("reconcile")
+            missing = self.invoke("reconcile", "--note", ".research/存在しない.md", expected=2)
+        self.assertEqual(review["review"], inspected["review"])
+        self.assertEqual("".join(unit["text"] for unit in review["coverage"]), original)
+        self.assertIn("存在しない.md", missing["error"])
+        self.assert_no_execution()
+
+    def test_concurrent_reconciliation_dispositions_retain_both_workers(self):
+        (self.project / ".research/history.md").write_bytes(b"The first result is historical context.\n\nThe second survey is independent work.\n")
+        review = self.invoke("reconcile", "--note", ".research/history.md")
+        processes = [subprocess.Popen(
+            [sys.executable, "-B", str(RUNNER), "reconcile", "--project", str(self.project), "--unit", item["id"],
+             "--disposition", "context" if index == 0 else "independent", "--rationale", f"Worker {index} source disposition."],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ) for index, item in enumerate(review["coverage"])]
+        try:
+            outputs = [process.communicate(timeout=20) for process in processes]
+            self.assertEqual([process.returncode for process in processes], [0, 0], outputs)
+        finally:
+            for process in processes:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=5)
+        completed = self.invoke("reconcile")
+        self.assertEqual(len(completed["review"]["events"]), 2)
+        self.assertEqual({item["disposition"]["disposition"] for item in completed["coverage"]}, {"context", "independent"})
+        self.prepare("both-dispositions-retained")
+        self.assert_no_execution()
+
     def test_live_git_keeps_inherited_trust_without_routing_or_child_leaks(self):
         runner = runpy.run_path(str(RUNNER), run_name="runner_under_test")
         alternate = make_project(self.root / "unrelated repository")
@@ -98,6 +273,7 @@ class InputBoundaryTests(unittest.TestCase):
             top = runner["git"](self.project, "rev-parse", "--show-toplevel").decode().strip()
             self.assertEqual(Path(top).resolve(), self.project.resolve())
             self.assertTrue(runner["ignored"](self.project))
+            self.registered_review()
             run_id = self.prepare("native trust context")
             result = self.invoke("run", "--id", run_id)
         self.assertEqual(result["status"], "completed")

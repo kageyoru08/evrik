@@ -50,6 +50,174 @@ class RunnerTests(unittest.TestCase):
         git(self.project, "add", name)
         git(self.project, "commit", "-m", "Change isolated test fixture")
 
+    def inherited_review(self):
+        self.commit_file("protected.txt", "Preserve the inherited calibration.\n")
+        raw = b"The earlier trial is historical context.\r\n\r\nPreserve the reference calibration in current committed source.\r\n"
+        (self.project / ".research/history.md").write_bytes(raw)
+        (self.project / ".research/reference.txt").write_bytes((self.project / "protected.txt").read_bytes())
+        review = command(self.project, "reconcile", "--note", ".research/history.md")
+        units = review["coverage"]
+        self.assertEqual("".join(unit["text"] for unit in units).encode("utf-8"), raw)
+        self.assertEqual(units[-1]["end_byte"], len(raw))
+        return [unit["id"] for unit in units]
+
+    def disposition(self, unit, value, *extra):
+        return command(self.project, "reconcile", "--unit", unit, "--disposition", value,
+                       "--rationale", "Explicit test classification of the inherited text.", *extra)
+
+    def verify_inherited(self, unit):
+        return self.disposition(unit, "verify", "--reference", ".research/reference.txt",
+                                "--current", "protected.txt")
+
+    def test_reconciliation_covers_all_text_and_keeps_failed_prerequisites(self):
+        context, obligation = self.inherited_review()
+        self.disposition(context, "context")
+        failure = self.invoke("prepare", "--label", "omitted", expected=2)
+        self.assertIn("pending or unresolved", failure["error"])
+        self.assertEqual(command(self.project, "inspect")["runs"], [])
+        original = (self.project / ".research/reference.txt").read_bytes()
+        (self.project / ".research/reference.txt").write_bytes(b"A different recorded calibration.\n")
+        failed = self.verify_inherited(obligation)
+        self.assertFalse(failed["coverage"][1]["required_comparison"]["equal"])
+        self.assertNotEqual(failed["coverage"][1]["required_comparison"]["reference"]["sha256"],
+                            failed["coverage"][1]["required_comparison"]["committed"]["sha256"])
+        self.disposition(obligation, "context")
+        failure = self.invoke("prepare", "--label", "label-is-not-resolution", expected=2)
+        self.assertIn("comparison failed", failure["error"])
+        (self.project / ".research/reference.txt").write_bytes(original)
+        resolved = self.verify_inherited(obligation)
+        self.assertTrue(resolved["coverage"][1]["required_comparison"]["equal"])
+        self.assertEqual(len(resolved["review"]["events"]), 4)
+        self.assertEqual(resolved["review"]["events"][1], failed["review"]["events"][1])
+        run_id = self.prepare("resolved")
+        self.assertEqual(command(self.project, "run", "--id", run_id)["status"], "completed")
+
+    def test_registration_preserves_legacy_run_and_reprepare_can_allocate(self):
+        self.assertFalse(command(self.project, "reconcile")["registered"])
+        legacy = self.prepare("before-registration")
+        (self.project / ".research/history.md").write_text("The previous result is only a baseline.\n", encoding="utf-8")
+        registered = command(self.project, "reconcile", "--note", ".research/history.md")
+        unit = registered["coverage"][0]["id"]
+        self.disposition(unit, "context")
+        original = (self.run_path(legacy) / "manifest.json").read_bytes()
+        failure = self.invoke("run", "--id", legacy, expected=2)
+        self.assertIn("prepare --replicate", failure["error"])
+        fresh = self.prepare("after-registration")
+        self.assertNotEqual(fresh, legacy)
+        self.assertEqual(self.prepare("same-review"), fresh)
+        old = json.loads(original)
+        new = command(self.project, "inspect", "--id", fresh)
+        self.assertEqual(old["fingerprint"], new["fingerprint"], "Review metadata is not scientific identity")
+        self.assertEqual((self.run_path(legacy) / "manifest.json").read_bytes(), original)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 0)
+        self.assertEqual(command(self.project, "run", "--id", fresh)["status"], "completed")
+
+    def test_reconciliation_is_current_at_launch_but_protects_each_prepared_snapshot(self):
+        context, obligation = self.inherited_review()
+        self.disposition(context, "context")
+        self.verify_inherited(obligation)
+        old_id = self.prepare("old-source")
+        original_receipt = command(self.project, "inspect", "--id", old_id)["reconciliation"]
+        # Unrelated source commits do not require semantic reclassification.
+        self.commit_file("model.json", '{"method":"linear"}\n')
+        new_id = self.prepare("unrelated-change")
+        self.assertEqual(command(self.project, "inspect", "--id", new_id)["reconciliation"], original_receipt)
+        # Changed protected bytes require fresh computed evidence before any claim.
+        self.commit_file("protected.txt", "An explicitly revised calibration.\n")
+        failure = self.invoke("run", "--id", old_id, expected=2)
+        self.assertIn("Stale reconciliation", failure["error"])
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 0)
+        (self.project / ".research/reference.txt").write_bytes((self.project / "protected.txt").read_bytes())
+        self.verify_inherited(obligation)
+        history = self.project / ".research/history.md"
+        history.write_bytes(history.read_bytes() + b"\nAn unresolved external survey can wait while this independent regression runs.\n")
+        self.invoke("run", "--id", old_id, expected=2)
+        updated = command(self.project, "reconcile", "--note", ".research/history.md")
+        self.invoke("run", "--id", old_id, expected=2)
+        for unit in updated["coverage"]:
+            if unit["disposition"] is None:
+                if "Preserve the reference" in unit["text"]:
+                    self.verify_inherited(unit["id"])
+                else:
+                    self.disposition(unit["id"], "independent")
+        old = command(self.project, "run", "--id", old_id)
+        new = command(self.project, "run", "--id", new_id)
+        self.assertEqual(old["reconciliation"], original_receipt)
+        self.assertEqual(old["evidence"]["metrics"]["mse"], 21.0)
+        self.assertEqual(new["evidence"]["metrics"]["mse"], 0.0)
+        self.assertEqual(command(self.project, "compare", "--baseline", old_id, "--candidate", new_id)["outcome"], "win")
+        latest = command(self.project, "reconcile")
+        self.assertEqual(len(latest["review"]["sources"]), 2)
+        self.assertIn("independent", [item["disposition"]["disposition"] for item in latest["coverage"]])
+
+    def test_note_refresh_carries_pending_and_failed_units_until_explicit_revalidation(self):
+        context, obligation = self.inherited_review()
+        original = (self.project / ".research/reference.txt").read_bytes()
+        (self.project / ".research/reference.txt").write_bytes(b"The wrong calibration.\n")
+        self.verify_inherited(obligation)
+        (self.project / ".research/history.md").write_bytes(b"An updated handoff note.\n")
+        updated = command(self.project, "reconcile", "--note", ".research/history.md")
+        self.assertEqual({unit["id"] for unit in updated["coverage"] if unit["carried_forward"]}, {context, obligation})
+        for unit in updated["coverage"]:
+            if not unit["carried_forward"]:
+                self.disposition(unit["id"], "context")
+        self.assertIn("pending or unresolved", self.invoke("prepare", "--label", "pending-history", expected=2)["error"])
+        self.disposition(context, "completed")
+        self.disposition(obligation, "independent")
+        self.assertIn("comparison failed", self.invoke("prepare", "--label", "failed-history", expected=2)["error"])
+        (self.project / ".research/reference.txt").write_bytes(original)
+        self.verify_inherited(obligation)
+        self.prepare("explicitly-revalidated-history")
+        current = command(self.project, "reconcile")
+        carried = [unit for unit in current["coverage"] if unit["carried_forward"]]
+        self.assertEqual([unit["id"] for unit in carried], [obligation])
+        self.assertTrue(carried[0]["required_comparison"]["equal"])
+        self.assertEqual(len(current["review"]["sources"]), 2)
+
+    def test_new_protected_selector_requires_a_new_preparation(self):
+        context, obligation = self.inherited_review()
+        self.disposition(context, "context")
+        self.verify_inherited(obligation)
+        old_id = self.prepare("before-new-dependency")
+        original = (self.run_path(old_id) / "manifest.json").read_bytes()
+        (self.project / ".research/new-history.md").write_bytes(b"The committed evaluator must also preserve the inherited version.\n")
+        (self.project / ".research/reference.py").write_bytes((self.project / "evaluate.py").read_bytes())
+        updated = command(self.project, "reconcile", "--note", ".research/new-history.md")
+        new_unit = next(unit["id"] for unit in updated["coverage"] if unit["path"] == ".research/new-history.md")
+        self.disposition(new_unit, "verify", "--reference", ".research/reference.py", "--current", "evaluate.py")
+        failure = self.invoke("run", "--id", old_id, expected=2)
+        self.assertIn("new protected selector", failure["error"])
+        self.assertEqual((self.run_path(old_id) / "manifest.json").read_bytes(), original)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 0)
+        new_id = self.prepare("after-new-dependency")
+        self.assertNotEqual(old_id, new_id)
+        self.assertEqual(command(self.project, "run", "--id", new_id)["status"], "completed")
+
+    def test_reconciliation_byte_ranges_and_git_reference_read_actual_content(self):
+        self.commit_file("protected.txt", "prefix\nretained\nsuffix\n")
+        reference_bytes = (self.project / "protected.txt").read_bytes()
+        retained = reference_bytes.splitlines(keepends=True)[1]
+        start = reference_bytes.index(retained)
+        selected_range = f"{start}:{start + len(retained)}"
+        reference_commit = git(self.project, "rev-parse", "HEAD")
+        (self.project / ".research/history.md").write_text("Only the retained line is protected.\n", encoding="utf-8")
+        review = command(self.project, "reconcile", "--note", ".research/history.md")
+        unit = review["coverage"][0]["id"]
+        self.commit_file("protected.txt", "PREFIX\nretained\nSUFFIX\n")
+        # Neither whole-file identity nor a commit subject can satisfy this relation.
+        result = self.disposition(unit, "verify", "--reference", "protected.txt",
+                                  "--reference-revision", reference_commit,
+                                  "--current", "protected.txt", "--reference-range", selected_range,
+                                  "--current-range", selected_range)
+        observed = result["coverage"][0]["required_comparison"]
+        self.assertNotEqual(observed["reference"]["file_sha256"], observed["current"]["file_sha256"])
+        self.assertEqual(observed["reference"]["sha256"], hashlib.sha256(retained).hexdigest())
+        self.assertEqual(observed["reference"]["origin"]["commit"], reference_commit)
+        self.assertEqual(command(self.project, "run", "--id", self.prepare("partial-content"))["status"], "completed")
+        self.disposition(unit, "verify", "--reference", "protected.txt", "--reference-revision", reference_commit,
+                         "--current", "protected.txt")
+        self.assertIn("comparison failed", self.invoke("prepare", "--label", "whole-file-mismatch", expected=2)["error"])
+
     def test_prepared_code_is_unchanged_by_later_checkout_edits(self):
         baseline = self.prepare("baseline")
         self.commit_file("model.json", '{"method":"linear"}\n')

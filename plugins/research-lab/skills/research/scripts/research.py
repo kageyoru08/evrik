@@ -9,6 +9,7 @@ is deliberately never recycled, even when it may not have created a process.
 from __future__ import annotations
 
 import argparse
+import base64
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -429,6 +430,290 @@ def initialize(project: Path, storage: Path) -> dict:
             "guidance": "Edit the protocol, ignore .research/, and commit experimental source and data before prepare."}
 
 
+DISPOSITIONS = {"context", "completed", "unresolved", "unsupported", "independent", "verify"}
+
+
+def review_path(project: Path, name: str) -> Path:
+    # Allow ordinary ignored notes, but never Git metadata or the generated review.
+    if (not isinstance(name, str) or archive_name("content/" + name) != "content/" + name
+            or name.endswith("/") or name.split("/")[0].casefold() == ".git"
+            or name.casefold().startswith(".research/reconciliation/")):
+        raise ResearchError("Reconciliation requires a canonical project-relative source path")
+    return safe_path(project, *PurePosixPath(name).parts)
+
+
+def review_bytes(project: Path, name: str) -> bytes:
+    path = review_path(project, name)
+    if not path.is_file():
+        raise ResearchError(f"Reconciliation source must be an existing regular file: {name}")
+    return path.read_bytes()
+
+
+def source_units(name: str, text: str) -> list[dict]:
+    raw = text.encode("utf-8")
+    units, start, end = [], 0, 0
+    for line in raw.splitlines(keepends=True):
+        end += len(line)
+        if not line.strip() or end == len(raw):
+            block = raw[start:end]
+            sha = hashlib.sha256(block).hexdigest()
+            units.append({"id": digest([name, start, end, sha]), "path": name,
+                          "start_byte": start, "end_byte": end, "sha256": sha,
+                          "text": block.decode("utf-8")})
+            start = end
+    return units
+
+
+def source_selection(project: Path, name: str, span: list[int] | None,
+                     revision: str | None = None) -> dict:
+    origin = {"kind": "file"}
+    if revision is None:
+        raw = review_bytes(project, name)
+    else:
+        review_path(project, name)
+        if not isinstance(revision, str) or not revision or "\0" in revision:
+            raise ResearchError("A Git reference must be a nonempty NUL-free string")
+        commit = git(project, "rev-parse", "--verify", "--end-of-options", revision + "^{commit}").decode().strip()
+        entries = git(project, "--literal-pathspecs", "ls-tree", "--full-tree", "-z", commit, "--", name).split(b"\0")
+        if len(entries) != 2 or not entries[0]:
+            raise ResearchError(f"Committed reconciliation source missing or not a file: {name}")
+        metadata, actual = entries[0].split(b"\t", 1)
+        mode, kind, blob = metadata.decode().split()
+        if actual.decode("utf-8") != name or kind != "blob" or mode not in {"100644", "100755"}:
+            raise ResearchError(f"Unsupported committed reconciliation source: {name}")
+        raw = git(project, "cat-file", "blob", blob)
+        origin = {"kind": "git", "revision": revision, "commit": commit, "blob": blob}
+    if span is not None and (not isinstance(span, list) or len(span) != 2
+            or any(type(item) is not int for item in span) or not 0 <= span[0] < span[1] <= len(raw)):
+        raise ResearchError("Source range must be START:END bytes, zero-based and end-exclusive, within the file")
+    selected = raw if span is None else raw[span[0]:span[1]]
+    return {"path": name, "range": span, "origin": origin,
+            "file_sha256": hashlib.sha256(raw).hexdigest(), "file_size_bytes": len(raw),
+            "sha256": hashlib.sha256(selected).hexdigest(),
+            "content_base64": base64.b64encode(selected).decode("ascii")}
+
+
+def observation_bytes(selection: Any) -> bytes:
+    exact_keys(selection, {"path", "range", "origin", "file_sha256", "file_size_bytes",
+                           "sha256", "content_base64"}, "reconciliation selection")
+    if (not isinstance(selection["content_base64"], str)
+            or not isinstance(selection["path"], str)
+            or any(not isinstance(selection[key], str) or not re.fullmatch(r"[0-9a-f]{64}", selection[key])
+                   for key in ("file_sha256", "sha256"))):
+        raise ResearchError("Invalid reconciliation content representation")
+    raw = base64.b64decode(selection["content_base64"], validate=True)
+    if hashlib.sha256(raw).hexdigest() != selection["sha256"]:
+        raise ResearchError("Reconciliation selected-content integrity check failed")
+    if selection["range"] is None and selection["file_sha256"] != selection["sha256"]:
+        raise ResearchError("Reconciliation whole-file identity check failed")
+    span, size, origin = selection["range"], selection["file_size_bytes"], selection["origin"]
+    if (type(size) is not int or size < 0 or (span is None and len(raw) != size)
+            or (span is not None and (not isinstance(span, list) or len(span) != 2
+                or any(type(item) is not int for item in span)
+                or not 0 <= span[0] < span[1] <= size or len(raw) != span[1] - span[0]))):
+        raise ResearchError("Invalid reconciliation source range or size")
+    if not isinstance(origin, dict) or origin.get("kind") not in ("file", "git"):
+        raise ResearchError("Invalid reconciliation source origin")
+    exact_keys(origin, {"kind"} if origin["kind"] == "file" else
+               {"kind", "revision", "commit", "blob"}, "reconciliation origin")
+    if origin["kind"] == "git" and any(not isinstance(origin[key], str) or not origin[key]
+            or "\0" in origin[key] for key in ("revision", "commit", "blob")):
+        raise ResearchError("Invalid reconciliation Git identity")
+    return raw
+
+
+def review_state(envelope: Any) -> tuple[dict, list[dict], dict, dict]:
+    exact_keys(envelope, {"sha256", "review"}, "reconciliation record")
+    record = envelope["review"]
+    exact_keys(record, {"schema_version", "id", "sources", "events"}, "reconciliation review")
+    if (type(record["schema_version"]) is not int or record["schema_version"] != 1
+            or not isinstance(record["id"], str) or not re.fullmatch(r"[0-9a-f]{32}", record["id"])
+            or not isinstance(record["sources"], list) or not record["sources"]
+            or not isinstance(record["events"], list) or digest(record) != envelope["sha256"]):
+        raise ResearchError("Invalid reconciliation record or integrity checksum")
+    sources, known = {}, {}
+    for source in record["sources"]:
+        exact_keys(source, {"path", "text", "sha256", "units"}, "reconciliation source")
+        if (not isinstance(source["path"], str) or not isinstance(source["text"], str)
+                or hashlib.sha256(source["text"].encode("utf-8")).hexdigest() != source["sha256"]
+                or source_units(source["path"], source["text"]) != source["units"]):
+            raise ResearchError("Reconciliation source coverage integrity check failed")
+        sources[source["path"]] = source
+        known.update((unit["id"], unit) for unit in source["units"])
+    dispositions, comparisons = {}, {}
+    for event in record["events"]:
+        exact_keys(event, {"units", "disposition", "rationale", "recorded_at", "observation"}, "reconciliation event")
+        if (not isinstance(event["units"], list) or not event["units"]
+                or any(not isinstance(item, str) or item not in known for item in event["units"])
+                or not isinstance(event["disposition"], str) or event["disposition"] not in DISPOSITIONS
+                or not isinstance(event["rationale"], str) or not event["rationale"].strip()
+                or not isinstance(event["recorded_at"], str) or not event["recorded_at"]):
+            raise ResearchError("Invalid reconciliation disposition")
+        observation = event["observation"]
+        if (observation is None) != (event["disposition"] != "verify"):
+            raise ResearchError("A verify disposition requires computed comparison evidence")
+        if observation is not None:
+            exact_keys(observation, {"reference", "current", "committed", "equal"}, "reconciliation observation")
+            values = [observation_bytes(observation[name]) for name in ("reference", "current", "committed")]
+            if type(observation["equal"]) is not bool or observation["equal"] != (values[0] == values[1] == values[2]):
+                raise ResearchError("Reconciliation comparison result does not match retained source bytes")
+            current, committed = observation["current"], observation["committed"]
+            if (current["origin"]["kind"] != "file" or committed["origin"]["kind"] != "git"
+                    or (current["path"], current["range"]) != (committed["path"], committed["range"])):
+                raise ResearchError("Invalid reconciliation current/committed relation")
+        for unit in event["units"]:
+            dispositions[unit] = event
+            if observation is not None:
+                comparisons[unit] = observation  # A later label cannot erase a declared prerequisite.
+    active = {unit["id"]: unit for source in sources.values() for unit in source["units"]}
+    for unit_id, unit in known.items():
+        if (unit_id in comparisons or unit_id not in dispositions
+                or dispositions[unit_id]["disposition"] in {"unresolved", "unsupported"}):
+            active.setdefault(unit_id, unit)  # Refreshing note bytes cannot retire outstanding obligations.
+    return sources, list(active.values()), dispositions, comparisons
+
+
+def load_review(storage: Path) -> dict | None:
+    directory = safe_path(storage, "reconciliation")
+    if not directory.exists():
+        runs = safe_path(storage, "runs")
+        if runs.exists():
+            for run in runs.iterdir():
+                if run.is_dir() and RUN_ID.fullmatch(run.name):
+                    _, manifest = read_manifest(storage, run.name)
+                    if "reconciliation" in manifest:
+                        raise ResearchError("Registered reconciliation missing; retained run receipts prove prior registration. Restore original evidence before continuing")
+        return None  # Honest boundary: never-registered and direct-shell work are not mediated.
+    envelope = read_json(safe_path(storage, "reconciliation", "review.json"))
+    review_state(envelope)
+    return envelope
+
+
+def check_review(project: Path, envelope: dict, *, current: bool) -> dict:
+    sources, units, dispositions, comparisons = review_state(envelope)
+    for source in sources.values():
+        review_path(project, source["path"])
+        if current and hashlib.sha256(review_bytes(project, source["path"])).hexdigest() != source["sha256"]:
+            raise ResearchError(f"Stale inherited source: {source['path']}; refresh it with reconcile --note")
+    checked = set()
+    for unit in units:
+        event = dispositions.get(unit["id"])
+        if event is None or event["disposition"] in {"unresolved", "unsupported"}:
+            raise ResearchError(f"Reconciliation unit pending or unresolved: {unit['id']}")
+        observation = comparisons.get(unit["id"])
+        if observation is None or digest(observation) in checked:
+            continue
+        checked.add(digest(observation))
+        if not observation["equal"]:  # review_state computed this relation from the retained bytes.
+            raise ResearchError(f"Reconciliation prerequisite comparison failed: {unit['id']}")
+        for name in ("reference", "current", "committed"):
+            selected = observation[name]
+            review_path(project, selected["path"])
+            if current:
+                revision = ("HEAD" if name == "committed" else selected["origin"].get("revision"))
+                fresh = source_selection(project, selected["path"], selected["range"], revision)
+                if fresh["sha256"] != selected["sha256"]:
+                    raise ResearchError(f"Stale reconciliation {name}: {selected['path']}; record a fresh comparison")
+    return envelope
+
+
+def check_review_snapshot(project: Path, envelope: dict, archive: zipfile.ZipFile) -> None:
+    check_review(project, envelope, current=False)
+    _, units, _, comparisons = review_state(envelope)
+    files, checked = snapshot_files(archive), set()
+    for unit in units:
+        observation = comparisons.get(unit["id"])
+        if observation is None or digest(observation) in checked:
+            continue
+        checked.add(digest(observation))
+        selected = observation["committed"]
+        name, span = selected["path"], selected["range"]
+        if name not in files:
+            raise ResearchError(f"Reconciliation protected source missing from prepared snapshot: {name}")
+        raw = archive.read(files[name])
+        if (span is not None and span[1] > len(raw)) or observation_bytes(selected) != (
+                raw if span is None else raw[span[0]:span[1]]):
+            raise ResearchError(f"Reconciliation does not match prepared source: {name}")
+
+
+def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
+    with project_lock(storage):
+        launches = ledger(storage)
+        envelope = load_review(storage)
+        if args.note and args.unit:
+            raise ResearchError("Refresh selected notes before recording their dispositions")
+        selectors = any((args.reference, args.current, args.reference_revision,
+                         args.reference_range, args.current_range))
+        if not args.unit and (args.disposition or args.rationale or selectors):
+            raise ResearchError("Disposition and comparison options require --unit")
+        record = envelope["review"] if envelope else {
+            "schema_version": 1, "id": uuid.uuid4().hex, "sources": [], "events": []}
+        changed = False
+        for name in args.note or []:
+            raw = review_bytes(project, name)
+            text = raw.decode("utf-8")
+            source = {"path": name, "text": text, "sha256": hashlib.sha256(raw).hexdigest(),
+                      "units": source_units(name, text)}
+            previous = next((item for item in reversed(record["sources"]) if item["path"] == name), None)
+            if source != previous:
+                record["sources"].append(source)
+                changed = True
+        if not record["sources"]:
+            if args.unit:
+                raise ResearchError("Register inherited sources with reconcile --note before classifying units")
+            return {"registered": False, "guidance": "Select inherited notes with reconcile --note PATH (repeatable); direct and never-registered work is outside this gate."}
+        envelope = {"review": record, "sha256": digest(record)}
+        sources, units, _, _ = review_state(envelope)
+        if args.unit:
+            active = {unit["id"] for unit in units}
+            if (not args.disposition or not args.rationale or not args.rationale.strip()
+                    or any(unit not in active for unit in args.unit)):
+                raise ResearchError("Use active --unit identifiers, --disposition and a nonempty --rationale")
+            for source in sources.values():
+                if hashlib.sha256(review_bytes(project, source["path"])).hexdigest() != source["sha256"]:
+                    raise ResearchError("Inherited text changed; reconcile --note before classifying it")
+            observation = None
+            if args.disposition == "verify":
+                if not args.reference or not args.current:
+                    raise ResearchError("verify requires --reference and --current source paths")
+                def span(value):
+                    if value is None:
+                        return None
+                    if not re.fullmatch(r"[0-9]+:[0-9]+", value):
+                        raise ResearchError("Source ranges use START:END byte offsets")
+                    return [int(item) for item in value.split(":")]
+                current_range = span(args.current_range)
+                observation = {
+                    "reference": source_selection(project, args.reference, span(args.reference_range), args.reference_revision),
+                    "current": source_selection(project, args.current, current_range),
+                    "committed": source_selection(project, args.current, current_range, "HEAD")}
+                observation["equal"] = (observation["reference"]["content_base64"]
+                                        == observation["current"]["content_base64"]
+                                        == observation["committed"]["content_base64"])
+            elif selectors:
+                raise ResearchError("Comparison selectors require a verify disposition")
+            record["events"].append({"units": list(dict.fromkeys(args.unit)), "disposition": args.disposition,
+                                     "rationale": args.rationale, "recorded_at": utc_now(), "observation": observation})
+            changed = True
+        envelope = {"review": record, "sha256": digest(record)}
+        _, units, dispositions, comparisons = review_state(envelope)
+        current_units = {unit["id"] for source in sources.values() for unit in source["units"]}
+        if changed:
+            safe_path(storage, "reconciliation").mkdir(exist_ok=True)
+            atomic_json(safe_path(storage, "reconciliation", "review.json"), envelope)
+        return {"registered": True, **envelope,
+                "coverage": [{**unit, "disposition": dispositions.get(unit["id"]),
+                              "carried_forward": unit["id"] not in current_units,
+                              "required_comparison": comparisons.get(unit["id"])} for unit in units],
+                "runner": {"launches": launches, "runs": [
+                    {key: manifest.get(key) for key in ("id", "label", "status", "source", "evidence")}
+                    for _, manifest in (read_manifest(storage, directory.name)
+                        for directory in safe_path(storage, "runs").iterdir()
+                        if directory.is_dir() and RUN_ID.fullmatch(directory.name))
+                ] if safe_path(storage, "runs").exists() else []},
+                "limits": "Coverage is selected text, not proof of semantic understanding. Independent units remain unresolved outside this work. Direct actions and never-registered projects are not mediated."}
+
+
 def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
     if not ignored(project):
         raise ResearchError(".research/ must be ignored by Git; add it to .gitignore and commit that change")
@@ -451,6 +736,10 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
             with zipfile.ZipFile(archive_path) as archive:
                 files = snapshot_files(archive)
                 data = data_evidence(archive, files, protocol["data_paths"])
+                reconciliation = load_review(storage)
+                if reconciliation is not None:
+                    check_review(project, reconciliation, current=True)
+                    check_review_snapshot(project, reconciliation, archive)
             if (git(project, "rev-parse", "HEAD").decode().strip() != commit
                     or git(project, "status", "--porcelain=v1", "--untracked-files=normal")):
                 raise ResearchError("Git state changed during prepare; retry after preserving those changes")
@@ -461,7 +750,8 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
                 for directory in sorted(runs.iterdir()):
                     if directory.is_dir() and RUN_ID.fullmatch(directory.name):
                         _, previous = read_manifest(storage, directory.name)
-                        if previous.get("fingerprint") == fingerprint:
+                        if (previous.get("fingerprint") == fingerprint
+                                and previous.get("reconciliation") == reconciliation):
                             return {"id": previous["id"], "status": previous["status"],
                                     "deduplicated": True, "manifest": str(directory / "manifest.json"),
                                     "guidance": "Use --replicate to allocate an intentional new run."}
@@ -469,6 +759,8 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
                         "hypothesis": args.hypothesis, "replicate": args.replicate,
                         "created_at": utc_now(), "status": "prepared", "fingerprint": fingerprint,
                         **inputs, "protocol": protocol, "evidence": {"status": "pending"}}
+            if reconciliation is not None:
+                manifest["reconciliation"] = reconciliation
             atomic_json(temporary / "manifest.json", manifest)
             destination = safe_path(storage, "runs", run_id)
             temporary.rename(destination)
@@ -580,6 +872,25 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         if run_id in launches["claims"] or manifest.get("status") != "prepared":
             raise ResearchError("This run already has a launch claim or is not prepared; inspect it. Never relaunch this id.")
         protocol = verify_snapshot(storage, directory, manifest)
+        reconciliation = load_review(storage)
+        captured_review = manifest.get("reconciliation")
+        if reconciliation is not None:
+            check_review(project, reconciliation, current=True)
+            if captured_review is None:
+                raise ResearchError("This run predates inherited-source registration; preserve it and prepare --replicate for an attributable new run")
+            review_state(captured_review)
+            if captured_review["review"]["id"] != reconciliation["review"]["id"]:
+                raise ResearchError("Prepared reconciliation belongs to another registration")
+            def protected_selectors(review):
+                _, units, _, comparisons = review_state(review)
+                return {digest({key: comparisons[unit["id"]]["current"][key] for key in ("path", "range")})
+                        for unit in units if unit["id"] in comparisons}
+            if not protected_selectors(reconciliation) <= protected_selectors(captured_review):
+                raise ResearchError("Reconciliation declares a new protected selector absent from this prepared receipt; preserve it and prepare --replicate")
+            with zipfile.ZipFile(directory / "source.zip") as archive:
+                check_review_snapshot(project, captured_review, archive)
+        elif captured_review is not None:
+            raise ResearchError("Registered reconciliation missing; restore original evidence before launching")
         active_protocol = validate_protocol(read_json(safe_path(storage, "protocol.json")))
         if active_protocol["budget"] != protocol["budget"]:
             raise ResearchError("Active execution budget differs from this prepared run; prepare a new run under the active budget before launching")
@@ -732,7 +1043,7 @@ def compare(storage: Path, baseline_id: str, candidate_id: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
-    for name in ("init", "prepare", "run", "inspect", "compare"):
+    for name in ("init", "prepare", "run", "inspect", "compare", "reconcile"):
         command = sub.add_parser(name)
         command.add_argument("--project", required=True, help="Git repository root")
         if name == "prepare":
@@ -744,6 +1055,16 @@ def main() -> int:
         if name == "compare":
             command.add_argument("--baseline", required=True)
             command.add_argument("--candidate", required=True)
+        if name == "reconcile":
+            command.add_argument("--note", action="append", help="Select or refresh an inherited UTF-8 note inside the project")
+            command.add_argument("--unit", action="append", help="Source-derived unit ID to classify; repeat for adjacent units")
+            command.add_argument("--disposition", choices=sorted(DISPOSITIONS))
+            command.add_argument("--rationale")
+            command.add_argument("--reference", help="Authoritative reference path inside the project")
+            command.add_argument("--reference-revision", help="Read the reference from this Git commit/ref, instead of the live file")
+            command.add_argument("--current", help="Protected current file to compare with the reference and its HEAD blob")
+            command.add_argument("--reference-range", help="Optional zero-based, end-exclusive START:END byte range")
+            command.add_argument("--current-range", help="Optional zero-based, end-exclusive START:END byte range")
     args = parser.parse_args()
     try:
         if sys.version_info < (3, 11):
@@ -759,14 +1080,17 @@ def main() -> int:
             result = execute(project, storage, args.id)
         elif args.action == "inspect":
             result = inspect(storage, args.id)
+        elif args.action == "reconcile":
+            result = reconcile(project, storage, args)
         else:
             result = compare(storage, args.baseline, args.candidate)
-        print(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False))
+        # JSON escapes preserve arbitrary note text even on legacy-codepage pipes.
+        print(json.dumps(result, indent=2, allow_nan=False))
         if args.action == "run" and (result["status"] != "completed" or result["evidence"]["status"] != "valid"):
             return 1
         return 0
     except (ResearchError, OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print(json.dumps({"error": "Interrupted; inspect recorded state before any further action"}), file=sys.stderr)

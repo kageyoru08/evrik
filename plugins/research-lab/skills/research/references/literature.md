@@ -2,20 +2,27 @@
 
 Use available search and reading tools. Keep the search proportional to the question; a focused synthesis does not automatically require an exhaustive review or an experiment.
 
-## Capture native search responses
+## Capture native discovery and reading responses
 
-When native code composition is exposed, save the actual search request, date,
-and returned response before exposing the response for synthesis. Resolve the
-host's real tool names, result contracts, and shell; no replacement search
+When native code composition is exposed, save the actual search or bounded
+source-reading request, completion date, and returned response before exposing
+the response for synthesis. Resolve the host's real tool names, result
+contracts, and shell; no replacement search
 tool or runtime is needed. Choose a new receipt path in the authorized work
 area. A verified receipt supplies the raw fields; the working record links it
 and adds brief coverage and selection notes without duplicating its contents.
 
-This example uses the observed Windows bindings. Set `request` and
-`recordPath` from the task; use the native file reader for the actual shell:
+This example uses the observed Windows bindings and a string-valued native
+web return. Set `request` and `recordPath` from the task; use the native file
+reader for the actual shell. Do not assume this representation covers a
+different tool's structured, binary or non-text return:
 
 ```javascript
 const response = await tools.web__run(request);
+// Optional recovery for a supported serializable return, not durable storage.
+if (typeof store === "function") store(recordPath, {request, response});
+if (typeof response !== "string")
+  throw new Error("Unsupported capture representation; preserve the actual return through the host's supported contract");
 const serialized = JSON.stringify({request, completed_at: new Date().toISOString(), response})
   .replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 // Optional session recovery, only when store/load are documented by the host.
@@ -26,7 +33,7 @@ const saved = await tools.exec_command({
   max_output_tokens: 20000
 });
 if (saved.exit_code !== 0 || typeof saved.output !== "string" || saved.output.trim() !== serialized)
-  throw new Error("Capture incomplete; do not repeat the search");
+  throw new Error("Capture incomplete; do not repeat retrieval");
 text(response);
 ```
 
@@ -36,11 +43,27 @@ verifies persistence. A write/read error or truncated readback leaves capture
 incomplete. Recover a surviving response from the documented session store
 or usable receipt and repair only the failed operation. Session storage is
 not durable; if no response survives, report incomplete capture instead of
-silently repeating the search. Do not print the readback again.
+silently repeating retrieval. Do not print the readback again.
 
-The receipt proves what was recorded, not search success, source reading, or
-coverage. Calls outside the composition remain outside its guarantee. When
-composition is unavailable, use immediate native write/read capture and do
+For source reading, retain the actual supplied URL/reference, location or
+pattern and returned text/metadata, including errors and redirects actually
+reported. Use one source operation per receipt unless every operation in a
+batch has an unambiguous request/response association. Never infer a resolved
+URL or attach an access error to a different request. Request only material
+passages; a find containing match locations alone is navigation evidence and
+may need a bounded open for the supporting text.
+
+Inspect the retained body before calling it a captured passage. Metadata,
+opaque handles, truncation, unsupported serialization and failed readback
+cannot establish passage capture. The exact comparison checks the response
+supplied to composition; claim exact model-displayed content only when the
+actual emission and observation also establish it. A receipt containing an
+error records that failure, not successful reading.
+
+The receipt proves what was recorded, not successful discovery, comprehension,
+coverage or citation accuracy. Calls outside the composition remain outside
+its guarantee. When composition is unavailable, use immediate native
+write/read capture and do
 not describe manual transcription as automatic capture.
 
 ## Find and read evidence

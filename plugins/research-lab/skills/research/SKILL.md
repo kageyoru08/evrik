@@ -34,21 +34,30 @@ running, comparing, or resuming experiments.
 
 ### Establish the current checkpoint
 
-Start with existing handoff notes and saved run records. Carry material
-pending actions relevant to continuation into the current part of the working
-record as claims to verify, preserving their historical wording.
+Start with existing handoff notes and saved run records. For inherited
+experimental work, select the relevant authorized notes and register them
+with the runner's `reconcile --note` before experimental edits or launches.
+Read the returned source-bound units and run state; give each unit an
+explicit disposition and rationale. Preserve historical wording and carry
+unresolved obligations into the current working record.
 
 Use those claims to choose the necessary file, Git, and runner inspections.
-For a content-restoration claim, compare the relevant current content with
-its recorded reference and confirm that content in the current committed
-source. A clean tree or commit subject alone is insufficient. Inspect the
-relevant content before attributing restoration to a particular commit;
+For a content-restoration claim, use `reconcile` to compare the relevant
+current content with its recorded reference and current committed source.
+Select an authoritative reference from the history; a comparison against a
+copy of the current content does not establish restoration. A clean tree or
+commit subject alone is insufficient. Inspect the relevant content before
+attributing restoration to a particular commit;
 otherwise qualify or omit that attribution.
 
 Record each material action's current status and supporting evidence before
-new experimental source edits or evaluator launches. An initial unverified
-entry is not a completed check. When verification is genuinely unavailable,
-record the uncertainty and continue only independent authorized work.
+new experimental source edits or evaluator launches. The runner computes
+declared content comparisons; classifications still require judgment.
+Refresh changed notes and revalidate stale comparisons. An unverified or
+unresolved entry is not a completed check. Continue only justified independent
+authorized work when a required verification is unavailable; retain its
+unresolved status. Registered history is checked by `prepare` and `run`,
+but registration cannot retroactively satisfy a missed pre-edit check.
 
 Inspect unresolved executions before deciding what can safely continue.
 Never automatically relaunch a run whose execution may still exist, reset
@@ -110,6 +119,12 @@ its identity and version, actual access and inspected passages, relevant
 section heading and URL, and brief evidence supporting the claim. Follow the
 reference's primary-source, evidence-family, conflicting-finding, access, and
 source-instruction handling requirements.
+
+Use the same native capture transaction for bounded source-reading responses.
+Retain each actual open/find request and its returned passage or access error,
+verify the saved response, then expose it for synthesis. A find that returns
+only locations needs a bounded open for material text. Metadata-only output
+and unwrapped calls do not establish captured passage access.
 
 Prepare source descriptions here for reuse in the report. For ordinary
 synthesis, use the inspected section and source URL, without adding page

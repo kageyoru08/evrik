@@ -31,6 +31,8 @@ Resolve the runner's absolute path from the installed skill's `scripts/research.
 
 ```text
 init --project PATH
+reconcile --project PATH --note NOTE_PATH
+reconcile --project PATH
 prepare --project PATH --label LABEL --hypothesis TEXT
 run --project PATH --id ID
 inspect --project PATH
@@ -38,7 +40,60 @@ inspect --project PATH --id ID
 compare --project PATH --baseline ID --candidate ID
 ```
 
-`prepare` snapshots committed code using `git archive` and records the protocol, declared data identities, and execution identity in `.research/runs/`. Identical inputs return an existing run record; inspect its state and use `prepare ... --replicate` only when a fresh repeated trial is intended. Retain the returned run ID. A later change in the working checkout does not change a prepared run's code snapshot.
+For inherited experiments, select existing natural handoff notes with
+`reconcile --note PATH` (repeatable). Paths are canonical project-relative
+paths; ignored notes are allowed, but Git metadata, generated reconciliation
+records and paths escaping the project are not. The runner snapshots all
+selected UTF-8 text as blocks with byte offsets, hashes and unit IDs. Read
+the returned coverage and saved run state before classifying the units:
+
+```text
+reconcile --project PATH --unit ID --disposition context --rationale TEXT
+reconcile --project PATH --unit ID --disposition verify --rationale TEXT --reference PATH --reference-revision REF --current PATH
+```
+
+Repeat `--unit` to apply one explicit disposition to adjacent units. Use
+`context` for background, `completed` for completed work supported by cited
+evidence in the rationale, `unresolved` or `unsupported` for remaining
+obligations, and `independent` only for an obligation that remains unresolved
+but is outside the justified work being continued. These are recorded
+judgments, not machine verification. Pending, unresolved and unsupported
+units block preparation and launch. A changed label cannot clear a declared
+comparison prerequisite.
+
+`verify` reads the reference, current file and current file's HEAD blob itself
+and records their actual content, identities and equality result. Omit
+`--reference-revision` only when the authoritative reference is a live project
+file. The reference must come from the relevant history; selecting it is an
+agent responsibility. Whole files are compared by default. For a partial
+obligation, `--reference-range START:END` and `--current-range START:END`
+select zero-based, end-exclusive byte ranges; the current range also selects
+the HEAD content. A failed comparison remains failed until reverified.
+
+Refresh changed notes with `--note`; earlier text and disposition events are
+retained. Pending or unresolved earlier units remain in coverage until
+explicitly resolved, even if the new note omits them. Every declared comparison
+remains a prerequisite whose relevant freshness is checked after successful
+revalidation. Unrelated commits do not invalidate unchanged relevant content.
+Use `reconcile` without mutation options to inspect/export the review and cite
+its `.research/reconciliation/review.json` from the working checkpoint.
+
+Once registered, `prepare` and `run` automatically check coverage and relevant
+source freshness. A prepared run retains its own immutable review receipt,
+separate from scientific comparability, and validates it against its captured
+source. Revalidate current history before continuing an older prepared run;
+its own source need not equal today's checkout. A newly required protected
+path or exact byte range absent from that run's receipt requires a new
+preparation. New units sharing an already captured selector can use its
+original frozen comparison; whether that evidence addresses the new
+obligation remains an agent/reviewer judgment. A run prepared before history
+registration needs a new preparation; inspect existing execution and budget
+before using `--replicate` to create a separate record. Never reset a claim.
+Unregistered projects and direct shell actions are outside this gate; omitting
+registration does not satisfy a task's historical-review requirement. The
+runner cannot prove that every relevant note was selected or understood.
+
+`prepare` snapshots committed code using `git archive` and records the protocol, declared data identities, and execution identity in `.research/runs/`. Identical scientific inputs and current reconciliation receipt return an eligible existing run record; inspect its state and use `prepare ... --replicate` only when a fresh repeated trial is intended. Retain the returned run ID. A later change in the working checkout does not change a prepared run's code snapshot.
 
 The active protocol's `budget` must match the prepared budget before launch. Changing `max_runs` or `timeout_seconds` requires a new preparation under the active limits; running an older prepared ID will be rejected. The recorded scientific protocol stays frozen. This prelaunch check does not change an already running evaluator's limits.
 
