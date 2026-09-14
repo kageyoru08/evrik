@@ -92,16 +92,106 @@ class RunnerTests(unittest.TestCase):
         run_id = self.prepare("resolved")
         self.assertEqual(command(self.project, "run", "--id", run_id)["status"], "completed")
 
+    def test_entry_decision_required_and_no_history_retained(self):
+        self.project = make_project(Path(self.temporary.name) / "cold-project", declare_entry=False)
+        storage = self.project / ".research"
+        protocol = (storage / "protocol.json").read_bytes()
+        self.assertEqual(command(self.project, "init")["entry_status"], "required")
+        self.assertEqual((storage / "protocol.json").read_bytes(), protocol)
+        self.assertEqual(command(self.project, "reconcile")["entry_status"], "required")
+        self.assertIn("Entry decision required", self.invoke("prepare", "--label", "missing", expected=2)["error"])
+        self.assertFalse((storage / "runs").exists())
+        self.assertFalse((storage / "launches.json").exists())
+        for options in [("--no-inherited-notes",), ("--no-inherited-notes", "--rationale", " "),
+                        ("--no-inherited-notes", "--rationale", "none", "--note", "history.md")]:
+            self.invoke("reconcile", *options, expected=2)
+        self.assertFalse((storage / "reconciliation").exists())
+        rationale = "Fresh synthetic test; no inherited investigation."
+        declared = command(self.project, "reconcile", "--no-inherited-notes", "--rationale", rationale)
+        self.assertFalse(declared["registered"])
+        self.assertFalse(declared["machine_verified"])
+        self.assertEqual(declared["entry_status"], "no_inherited_material_declared")
+        self.assertEqual(declared["review"]["sources"], [])
+        record_path = storage / "reconciliation/review.json"
+        original = record_path.read_bytes()
+        command(self.project, "reconcile", "--no-inherited-notes", "--rationale", rationale)
+        self.invoke("reconcile", "--no-inherited-notes", "--rationale", "Replace the assertion", expected=2)
+        self.assertEqual(record_path.read_bytes(), original)
+        self.assertEqual(command(self.project, "init")["entry_status"], declared["entry_status"])
+        # Even with a recomputed checksum, an empty source list needs a valid declaration.
+        invalid = json.loads(original)
+        invalid["review"]["no_inherited_material"] = None
+        invalid["sha256"] = hashlib.sha256(json.dumps(invalid["review"], sort_keys=True,
+                                                      separators=(",", ":")).encode()).hexdigest()
+        record_path.write_text(json.dumps(invalid), encoding="utf-8")
+        self.invoke("prepare", "--label", "invalid-entry", expected=2)
+        self.assertFalse((storage / "runs").exists())
+        record_path.write_bytes(original)
+        completed = self.prepare("declared")
+        self.assertEqual(self.prepare("same-declaration"), completed)
+        self.assertEqual(command(self.project, "run", "--id", completed)["status"], "completed")
+        unclaimed = self.prepare("before-selected-notes", "--replicate")
+        previous_manifest = (self.run_path(unclaimed) / "manifest.json").read_bytes()
+        (storage / "history.md").write_text("The earlier result is baseline context.\n", encoding="utf-8")
+        selected = command(self.project, "reconcile", "--note", ".research/history.md")
+        self.assertEqual(selected["review"]["id"], declared["review"]["id"])
+        self.assertEqual(selected["review"]["no_inherited_material"], declared["review"]["no_inherited_material"])
+        self.assertIn("pending or unresolved", self.invoke("prepare", "--label", "pending", expected=2)["error"])
+        self.assertIn("cannot be cleared", self.invoke("reconcile", "--no-inherited-notes",
+                                                      "--rationale", rationale, expected=2)["error"])
+        self.disposition(selected["coverage"][0]["id"], "context")
+        failure = self.invoke("run", "--id", unclaimed, expected=2)
+        self.assertIn("predates selected-note registration", failure["error"])
+        self.assertEqual((self.run_path(unclaimed) / "manifest.json").read_bytes(), previous_manifest)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 1)
+        fresh = self.prepare("selected-notes")
+        self.assertNotEqual(fresh, unclaimed)
+        self.assertEqual(command(self.project, "run", "--id", fresh)["status"], "completed")
+
     def test_registration_preserves_legacy_run_and_reprepare_can_allocate(self):
         self.assertFalse(command(self.project, "reconcile")["registered"])
-        legacy = self.prepare("before-registration")
+        baseline = self.prepare("legacy-baseline")
+        command(self.project, "run", "--id", baseline)
+        self.commit_file("model.json", '{"method":"linear"}\n')
+        candidate = self.prepare("legacy-candidate")
+        command(self.project, "run", "--id", candidate)
+        legacy = self.prepare("legacy-prepared", "--replicate")
+        # Isolated legacy-shaped records, not fabricated historical qualification evidence.
+        for run_id in (baseline, candidate, legacy):
+            path = self.run_path(run_id) / "manifest.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest.pop("reconciliation")
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+        record_path = self.project / ".research/reconciliation/review.json"
+        record_path.unlink()
+        record_path.parent.rmdir()
+        preserved = {path: path.read_bytes() for path in [self.project / ".research/launches.json"] + [
+            self.run_path(run_id) / name for run_id in (baseline, candidate, legacy)
+            for name in ("manifest.json", "source.zip")]}
+        self.assertEqual(command(self.project, "reconcile")["entry_status"], "required")
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 2)
+        self.assertEqual(command(self.project, "compare", "--baseline", baseline,
+                                 "--candidate", candidate)["outcome"], "win")
+        self.assertIn("already has a launch claim", self.invoke("run", "--id", baseline, expected=2)["error"])
+        self.assertIn("Entry decision required", self.invoke("run", "--id", legacy, expected=2)["error"])
         (self.project / ".research/history.md").write_text("The previous result is only a baseline.\n", encoding="utf-8")
         registered = command(self.project, "reconcile", "--note", ".research/history.md")
         unit = registered["coverage"][0]["id"]
+        # An existing schema-1 selected-note record is accepted and updated without migration.
+        schema_one = json.loads(record_path.read_text(encoding="utf-8"))
+        schema_one["review"]["schema_version"] = 1
+        schema_one["review"].pop("no_inherited_material")
+        schema_one["sha256"] = hashlib.sha256(json.dumps(schema_one["review"], sort_keys=True,
+                                                        separators=(",", ":")).encode()).hexdigest()
+        record_path.write_text(json.dumps(schema_one), encoding="utf-8")
+        saved_schema_one = record_path.read_bytes()
+        self.assertEqual(command(self.project, "reconcile")["review"]["schema_version"], 1)
+        self.assertEqual(record_path.read_bytes(), saved_schema_one)
         self.disposition(unit, "context")
+        self.assertEqual(command(self.project, "reconcile")["review"]["schema_version"], 1)
         original = (self.run_path(legacy) / "manifest.json").read_bytes()
         failure = self.invoke("run", "--id", legacy, expected=2)
-        self.assertIn("prepare --replicate", failure["error"])
+        self.assertIn("prepare a new attributable run", failure["error"])
         fresh = self.prepare("after-registration")
         self.assertNotEqual(fresh, legacy)
         self.assertEqual(self.prepare("same-review"), fresh)
@@ -109,8 +199,11 @@ class RunnerTests(unittest.TestCase):
         new = command(self.project, "inspect", "--id", fresh)
         self.assertEqual(old["fingerprint"], new["fingerprint"], "Review metadata is not scientific identity")
         self.assertEqual((self.run_path(legacy) / "manifest.json").read_bytes(), original)
-        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 0)
+        for path, raw in preserved.items():
+            self.assertEqual(path.read_bytes(), raw, str(path))
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 2)
         self.assertEqual(command(self.project, "run", "--id", fresh)["status"], "completed")
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 3)
 
     def test_reconciliation_is_current_at_launch_but_protects_each_prepared_snapshot(self):
         context, obligation = self.inherited_review()

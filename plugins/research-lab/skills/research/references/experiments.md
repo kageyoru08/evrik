@@ -25,7 +25,7 @@ When the runner reports an environment, ownership, or permission error, preserve
 
 ## Prepare attributable source
 
-Use an existing Git repository root. Initialize with `init --project PATH`; ensure `.research/` is ignored before preparation. The runner reports this requirement and does not change `.gitignore`. Commit the intended source and any ignore-file change after reviewing the diff. `prepare` requires a clean checkout and rejects uncommitted or untracked source changes.
+Use an existing Git repository root. Initialize with `init --project PATH`, then establish the explicit inherited-material entry below before experimental edits or launches. `init` reports entry status without silently declaring absence or resolving pending units. Ensure `.research/` is ignored before preparation; the runner reports this requirement and does not change `.gitignore`. Commit the intended source and any ignore-file change after reviewing the diff. `prepare` requires a clean checkout and rejects uncommitted or untracked source changes.
 
 Resolve the runner's absolute path from the installed skill's `scripts/research.py`, then invoke it with the available Python 3.11+ interpreter. All commands emit JSON:
 
@@ -51,6 +51,20 @@ the returned coverage and saved run state before classifying the units:
 reconcile --project PATH --unit ID --disposition context --rationale TEXT
 reconcile --project PATH --unit ID --disposition verify --rationale TEXT --reference PATH --reference-revision REF --current PATH
 ```
+
+If no inherited material applies, use the same command's explicit alternative:
+
+```text
+reconcile --project PATH --no-inherited-notes --rationale TEXT
+```
+
+This records the caller's absence assertion, not machine verification or an
+automatic search for history. It cannot be combined with note selection or
+unit/comparison options. The original declaration is retained; repeating the
+same rationale is idempotent, while replacing it is refused. Newly relevant
+notes can be selected later without erasing that earlier assertion. Selected
+sources, pending units and comparisons cannot be cleared by declaring absence.
+Plain `reconcile` inspects state without creating a decision.
 
 Repeat `--unit` to apply one explicit disposition to adjacent units. Use
 `context` for background, `completed` for completed work supported by cited
@@ -78,20 +92,33 @@ revalidation. Unrelated commits do not invalidate unchanged relevant content.
 Use `reconcile` without mutation options to inspect/export the review and cite
 its `.research/reconciliation/review.json` from the working checkpoint.
 
-Once registered, `prepare` and `run` automatically check coverage and relevant
-source freshness. A prepared run retains its own immutable review receipt,
+New `prepare` and `run` require an explicit entry decision. Missing entry is
+refused before preparation publication or launch-claim allocation; it does
+not count as a launch. Selected notes additionally require the existing
+coverage, comparison and relevant source-freshness checks. A prepared run
+retains its own immutable entry/review receipt,
 separate from scientific comparability, and validates it against its captured
 source. Revalidate current history before continuing an older prepared run;
 its own source need not equal today's checkout. A newly required protected
 path or exact byte range absent from that run's receipt requires a new
 preparation. New units sharing an already captured selector can use its
 original frozen comparison; whether that evidence addresses the new
-obligation remains an agent/reviewer judgment. A run prepared before history
-registration needs a new preparation; inspect existing execution and budget
+obligation remains an agent/reviewer judgment. A run prepared before the entry
+decision, or under an absence declaration before notes were selected, needs
+a new preparation; inspect existing execution and budget
 before using `--replicate` to create a separate record. Never reset a claim.
-Unregistered projects and direct shell actions are outside this gate; omitting
-registration does not satisfy a task's historical-review requirement. The
-runner cannot prove that every relevant note was selected or understood.
+Existing never-registered records remain available for read, inspect, valid
+numerical comparison and conservative recovery. Their bytes and scientific
+status are not retroactively relabeled as reviewed. Already claimed/uncertain
+runs remain unlaunchable, regardless of entry state. Existing schema-1 selected
+reviews remain valid without migration; new schema-2 records retain any
+no-inherited-material declaration. Older runner writers do not understand
+schema 2 and must not be mixed on that new storage.
+
+Direct shell actions remain outside the gate. The runner cannot prove that
+every relevant note was selected or understood, that an absence assertion is
+true, or that a final checkpoint preserves every resolution. Entry after an
+experimental edit cannot retroactively satisfy the pre-edit requirement.
 
 `prepare` snapshots committed code using `git archive` and records the protocol, declared data identities, and execution identity in `.research/runs/`. Identical scientific inputs and current reconciliation receipt return an eligible existing run record; inspect its state and use `prepare ... --replicate` only when a fresh repeated trial is intended. Retain the returned run ID. A later change in the working checkout does not change a prepared run's code snapshot.
 

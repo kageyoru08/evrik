@@ -23,7 +23,7 @@ def command(project: Path, operation: str, *args: str) -> dict:
     return json.loads(proc.stdout)
 
 
-def make_project(project: Path) -> Path:
+def make_project(project: Path, *, declare_entry: bool = True) -> Path:
     if project.exists() and any(project.iterdir()):
         raise ValueError("Demo workspace must be empty or nonexistent; existing work is never overwritten.")
     shutil.copytree(ROOT / "examples/small-regression", project, dirs_exist_ok=True,
@@ -35,6 +35,9 @@ def make_project(project: Path) -> Path:
     git(project, "add", ".")
     git(project, "commit", "-m", "Record fixed synthetic regression baseline")
     command(project, "init")
+    if declare_entry:
+        command(project, "reconcile", "--no-inherited-notes", "--rationale",
+                "This newly generated synthetic example has no inherited investigation or prior run records.")
     protocol = {
         "schema_version": 1,
         "name": "Synthetic regression",

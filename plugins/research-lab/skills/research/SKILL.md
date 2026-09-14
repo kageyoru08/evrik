@@ -41,6 +41,13 @@ Read the returned source-bound units and run state; give each unit an
 explicit disposition and rationale. Preserve historical wording and carry
 unresolved obligations into the current working record.
 
+`init` reports the entry decision still required; it does not declare that
+history is absent. If no inherited material applies, explicitly record the
+reason with `reconcile --no-inherited-notes --rationale TEXT`. That is the
+caller's assertion, not machine verification. New preparation and launch
+require an entry decision. Selecting notes still leaves their units pending
+until they have supported dispositions and any required comparisons.
+
 Use those claims to choose the necessary file, Git, and runner inspections.
 For a content-restoration claim, use `reconcile` to compare the relevant
 current content with its recorded reference and current committed source.
@@ -56,8 +63,10 @@ declared content comparisons; classifications still require judgment.
 Refresh changed notes and revalidate stale comparisons. An unverified or
 unresolved entry is not a completed check. Continue only justified independent
 authorized work when a required verification is unavailable; retain its
-unresolved status. Registered history is checked by `prepare` and `run`,
-but registration cannot retroactively satisfy a missed pre-edit check.
+unresolved status. Selected history is checked by `prepare` and `run`, but
+entry cannot retroactively satisfy a missed pre-edit check or guarantee that
+the final checkpoint retains every obligation. Direct shell actions remain
+outside the runner's gate.
 
 Inspect unresolved executions before deciding what can safely continue.
 Never automatically relaunch a run whose execution may still exist, reset

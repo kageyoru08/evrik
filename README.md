@@ -76,19 +76,32 @@ python plugins/research-lab/skills/research/scripts/research.py --help
 
 When invoked by the installed skill, Codex resolves the runner from that skill's own directory. It does not depend on this repository's checkout location.
 
-The command sequence is `init`, `prepare`, `run`, `inspect`, and `compare`; each returns JSON. The project must be an existing Git repository root. `init --project PATH` creates `.research/protocol.json` without overwriting an existing protocol. Review the generated protocol, ignore `.research/` in the project's Git configuration, and commit the intended source before preparing a run. The runner does not edit `.gitignore` for you and rejects a dirty checkout.
+The command sequence is `init`, `reconcile`, `prepare`, `run`, `inspect`, and `compare`; each returns JSON. The project must be an existing Git repository root. `init --project PATH` creates `.research/protocol.json` without overwriting an existing protocol and reports the inherited-material entry status. Establish that decision before experimental edits or launches. Review the generated protocol, ignore `.research/`, and commit the intended source before preparing a run. The runner does not edit `.gitignore` for you and rejects a dirty checkout.
 
 For inherited work, `reconcile --project PATH --note NOTE_PATH` registers
 selected existing notes and returns their complete source-bound review units
 with saved runner state. Record explicit dispositions and use `verify` for
-runner-computed reference/current/HEAD content comparisons. Registered reviews
-are checked automatically before preparation and launch; missing, unresolved,
-failed or stale prerequisites block the dependent operation. Earlier notes
+runner-computed reference/current/HEAD content comparisons. If no inherited
+material applies, explicitly record the caller's rationale with
+`reconcile --project PATH --no-inherited-notes --rationale TEXT`. This assertion
+is not machine verification, and no absence decision is made automatically.
+New preparation and launch require an entry decision; selected-note reviews
+are checked automatically for pending, unresolved, failed or stale prerequisites. Earlier notes
 and decisions remain available, and prepared runs retain their own review
 receipts. The runner does not decide whether every relevant note was selected
-or correctly interpreted. Direct shell actions and never-registered projects
-are outside this gate. The [experiment guidance](plugins/research-lab/skills/research/references/experiments.md)
+or correctly interpreted, that an absence assertion is true, or that the final
+checkpoint retains every resolution. Direct shell actions are outside this
+gate. The [experiment guidance](plugins/research-lab/skills/research/references/experiments.md)
 describes commands, classifications and snapshot behavior.
+
+Old never-registered records remain readable, inspectable and comparable under
+their existing scientific rules; uncertain/claimed executions are never
+automatically retried. An old preparation without an entry receipt needs a
+new attributable preparation before launch. The same applies if notes are
+selected after preparing under an absence declaration. Original receipts and
+budgets remain unchanged. Existing schema-1 selected reviews need no migration;
+new schema-2 entry records require the repaired runner rather than mixed older
+writers. Later entry cannot retroactively establish pre-edit review.
 
 Prepared runs retain their recorded protocol. Before launching, the active protocol's execution budget must still match the prepared run's `max_runs` and `timeout_seconds`. If either limit changes, prepare a new run under the desired budget; an older prepared run cannot bypass that change. This check applies before launch and does not supervise later edits during an existing execution.
 

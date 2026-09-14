@@ -421,13 +421,15 @@ def ledger(storage: Path) -> dict:
 
 def initialize(project: Path, storage: Path) -> dict:
     with project_lock(storage):
+        review = load_review(storage)
         protocol_path = safe_path(storage, "protocol.json")
         created = not protocol_path.exists()
         if created:
             atomic_json(protocol_path, TEMPLATE)
     is_ignored = ignored(project)
     return {"protocol": str(protocol_path), "created": created, "research_ignored": is_ignored,
-            "guidance": "Edit the protocol, ignore .research/, and commit experimental source and data before prepare."}
+            "entry_status": entry_status(review),
+            "guidance": "Before experimental edits or launches, use reconcile --note PATH to select and resolve inherited material, or reconcile --no-inherited-notes --rationale TEXT to record the caller's absence assertion. Registration alone does not resolve pending units. Then edit the protocol, ignore .research/, and commit experimental source and data before prepare."}
 
 
 DISPOSITIONS = {"context", "completed", "unresolved", "unsupported", "independent", "verify"}
@@ -525,10 +527,18 @@ def observation_bytes(selection: Any) -> bytes:
 def review_state(envelope: Any) -> tuple[dict, list[dict], dict, dict]:
     exact_keys(envelope, {"sha256", "review"}, "reconciliation record")
     record = envelope["review"]
-    exact_keys(record, {"schema_version", "id", "sources", "events"}, "reconciliation review")
-    if (type(record["schema_version"]) is not int or record["schema_version"] != 1
+    version = record.get("schema_version") if isinstance(record, dict) else None
+    keys = {"schema_version", "id", "sources", "events"}
+    exact_keys(record, keys | ({"no_inherited_material"} if version == 2 else set()), "reconciliation review")
+    declaration = record.get("no_inherited_material")
+    if declaration is not None:
+        exact_keys(declaration, {"rationale", "recorded_at"}, "no-inherited-material declaration")
+        if any(not isinstance(declaration[key], str) or not declaration[key].strip()
+               for key in ("rationale", "recorded_at")):
+            raise ResearchError("No-inherited-material declaration requires a rationale and recorded time")
+    if (type(version) is not int or version not in (1, 2)
             or not isinstance(record["id"], str) or not re.fullmatch(r"[0-9a-f]{32}", record["id"])
-            or not isinstance(record["sources"], list) or not record["sources"]
+            or not isinstance(record["sources"], list) or (not record["sources"] and declaration is None)
             or not isinstance(record["events"], list) or digest(record) != envelope["sha256"]):
         raise ResearchError("Invalid reconciliation record or integrity checksum")
     sources, known = {}, {}
@@ -573,7 +583,7 @@ def review_state(envelope: Any) -> tuple[dict, list[dict], dict, dict]:
     return sources, list(active.values()), dispositions, comparisons
 
 
-def load_review(storage: Path) -> dict | None:
+def load_review(storage: Path, *, required: bool = False) -> dict | None:
     directory = safe_path(storage, "reconciliation")
     if not directory.exists():
         runs = safe_path(storage, "runs")
@@ -583,10 +593,19 @@ def load_review(storage: Path) -> dict | None:
                     _, manifest = read_manifest(storage, run.name)
                     if "reconciliation" in manifest:
                         raise ResearchError("Registered reconciliation missing; retained run receipts prove prior registration. Restore original evidence before continuing")
-        return None  # Honest boundary: never-registered and direct-shell work are not mediated.
+        if required:
+            raise ResearchError("Entry decision required: use reconcile --note PATH, or reconcile --no-inherited-notes --rationale TEXT for the caller's explicit absence assertion")
+        return None  # Legacy inspection is read-only; new preparation/launch requires entry.
     envelope = read_json(safe_path(storage, "reconciliation", "review.json"))
     review_state(envelope)
     return envelope
+
+
+def entry_status(envelope: dict | None) -> str:
+    if envelope is None:
+        return "required"
+    return ("selected_notes_registered" if envelope["review"]["sources"]
+            else "no_inherited_material_declared")
 
 
 def check_review(project: Path, envelope: dict, *, current: bool) -> dict:
@@ -644,11 +663,25 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
             raise ResearchError("Refresh selected notes before recording their dispositions")
         selectors = any((args.reference, args.current, args.reference_revision,
                          args.reference_range, args.current_range))
-        if not args.unit and (args.disposition or args.rationale or selectors):
+        if args.no_inherited_notes:
+            if (args.note or args.unit or args.disposition or selectors
+                    or not args.rationale or not args.rationale.strip()):
+                raise ResearchError("--no-inherited-notes requires --rationale and cannot select notes, units, dispositions or comparisons")
+        elif not args.unit and (args.disposition or args.rationale or selectors):
             raise ResearchError("Disposition and comparison options require --unit")
         record = envelope["review"] if envelope else {
-            "schema_version": 1, "id": uuid.uuid4().hex, "sources": [], "events": []}
+            "schema_version": 2, "id": uuid.uuid4().hex, "sources": [], "events": [],
+            "no_inherited_material": None}
         changed = False
+        if args.no_inherited_notes:
+            if record["sources"]:
+                raise ResearchError("Selected inherited sources cannot be cleared by a no-inherited-notes declaration")
+            previous = record.get("no_inherited_material")
+            if previous is not None and previous["rationale"] != args.rationale:
+                raise ResearchError("No-inherited-material declaration already recorded; retain it and select any newly relevant notes")
+            if previous is None:
+                record["no_inherited_material"] = {"rationale": args.rationale, "recorded_at": utc_now()}
+                changed = True
         for name in args.note or []:
             raw = review_bytes(project, name)
             text = raw.decode("utf-8")
@@ -658,10 +691,11 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
             if source != previous:
                 record["sources"].append(source)
                 changed = True
-        if not record["sources"]:
+        if not record["sources"] and record.get("no_inherited_material") is None:
             if args.unit:
                 raise ResearchError("Register inherited sources with reconcile --note before classifying units")
-            return {"registered": False, "guidance": "Select inherited notes with reconcile --note PATH (repeatable); direct and never-registered work is outside this gate."}
+            return {"registered": False, "entry_status": "required",
+                    "guidance": "Before new preparation or launch, select inherited notes with reconcile --note PATH (repeatable), or record the caller's absence assertion with --no-inherited-notes --rationale TEXT. No entry is inferred by inspection."}
         envelope = {"review": record, "sha256": digest(record)}
         sources, units, _, _ = review_state(envelope)
         if args.unit:
@@ -701,7 +735,8 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
         if changed:
             safe_path(storage, "reconciliation").mkdir(exist_ok=True)
             atomic_json(safe_path(storage, "reconciliation", "review.json"), envelope)
-        return {"registered": True, **envelope,
+        return {"registered": bool(record["sources"]), "entry_status": entry_status(envelope),
+                "machine_verified": False, **envelope,
                 "coverage": [{**unit, "disposition": dispositions.get(unit["id"]),
                               "carried_forward": unit["id"] not in current_units,
                               "required_comparison": comparisons.get(unit["id"])} for unit in units],
@@ -711,7 +746,7 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
                         for directory in safe_path(storage, "runs").iterdir()
                         if directory.is_dir() and RUN_ID.fullmatch(directory.name))
                 ] if safe_path(storage, "runs").exists() else []},
-                "limits": "Coverage is selected text, not proof of semantic understanding. Independent units remain unresolved outside this work. Direct actions and never-registered projects are not mediated."}
+                "limits": "Entry and dispositions are caller judgments, not machine verification. Coverage is selected text, not proof of completeness or understanding; only retained comparisons compute content equality. Independent units remain unresolved outside this work. Direct shell actions and final-checkpoint completeness are not mediated."}
 
 
 def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
@@ -721,6 +756,8 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
     with project_lock(storage):
         if git(project, "status", "--porcelain=v1", "--untracked-files=normal"):
             raise ResearchError("Commit or otherwise preserve changes before prepare; the Git tree must be clean")
+        reconciliation = load_review(storage, required=True)
+        check_review(project, reconciliation, current=True)
         commit = git(project, "rev-parse", "HEAD").decode().strip()
         for record in git(project, "ls-tree", "-r", "-z", commit).split(b"\0"):
             if record.startswith((b"120000 ", b"160000 ")):
@@ -736,10 +773,7 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
             with zipfile.ZipFile(archive_path) as archive:
                 files = snapshot_files(archive)
                 data = data_evidence(archive, files, protocol["data_paths"])
-                reconciliation = load_review(storage)
-                if reconciliation is not None:
-                    check_review(project, reconciliation, current=True)
-                    check_review_snapshot(project, reconciliation, archive)
+                check_review_snapshot(project, reconciliation, archive)
             if (git(project, "rev-parse", "HEAD").decode().strip() != commit
                     or git(project, "status", "--porcelain=v1", "--untracked-files=normal")):
                 raise ResearchError("Git state changed during prepare; retry after preserving those changes")
@@ -872,25 +906,24 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         if run_id in launches["claims"] or manifest.get("status") != "prepared":
             raise ResearchError("This run already has a launch claim or is not prepared; inspect it. Never relaunch this id.")
         protocol = verify_snapshot(storage, directory, manifest)
-        reconciliation = load_review(storage)
+        reconciliation = load_review(storage, required=True)
         captured_review = manifest.get("reconciliation")
-        if reconciliation is not None:
-            check_review(project, reconciliation, current=True)
-            if captured_review is None:
-                raise ResearchError("This run predates inherited-source registration; preserve it and prepare --replicate for an attributable new run")
-            review_state(captured_review)
-            if captured_review["review"]["id"] != reconciliation["review"]["id"]:
-                raise ResearchError("Prepared reconciliation belongs to another registration")
-            def protected_selectors(review):
-                _, units, _, comparisons = review_state(review)
-                return {digest({key: comparisons[unit["id"]]["current"][key] for key in ("path", "range")})
-                        for unit in units if unit["id"] in comparisons}
-            if not protected_selectors(reconciliation) <= protected_selectors(captured_review):
-                raise ResearchError("Reconciliation declares a new protected selector absent from this prepared receipt; preserve it and prepare --replicate")
-            with zipfile.ZipFile(directory / "source.zip") as archive:
-                check_review_snapshot(project, captured_review, archive)
-        elif captured_review is not None:
-            raise ResearchError("Registered reconciliation missing; restore original evidence before launching")
+        check_review(project, reconciliation, current=True)
+        if captured_review is None:
+            raise ResearchError("This run predates the entry decision; preserve it and prepare a new attributable run; use --replicate only for an intentional repeat")
+        review_state(captured_review)
+        if captured_review["review"]["id"] != reconciliation["review"]["id"]:
+            raise ResearchError("Prepared reconciliation belongs to another registration")
+        if reconciliation["review"]["sources"] and not captured_review["review"]["sources"]:
+            raise ResearchError("This run predates selected-note registration; preserve it and prepare a new attributable run; use --replicate only for an intentional repeat")
+        def protected_selectors(review):
+            _, units, _, comparisons = review_state(review)
+            return {digest({key: comparisons[unit["id"]]["current"][key] for key in ("path", "range")})
+                    for unit in units if unit["id"] in comparisons}
+        if not protected_selectors(reconciliation) <= protected_selectors(captured_review):
+            raise ResearchError("Reconciliation declares a new protected selector absent from this prepared receipt; preserve it and prepare a new attributable run; use --replicate only for an intentional repeat")
+        with zipfile.ZipFile(directory / "source.zip") as archive:
+            check_review_snapshot(project, captured_review, archive)
         active_protocol = validate_protocol(read_json(safe_path(storage, "protocol.json")))
         if active_protocol["budget"] != protocol["budget"]:
             raise ResearchError("Active execution budget differs from this prepared run; prepare a new run under the active budget before launching")
@@ -1057,6 +1090,7 @@ def main() -> int:
             command.add_argument("--candidate", required=True)
         if name == "reconcile":
             command.add_argument("--note", action="append", help="Select or refresh an inherited UTF-8 note inside the project")
+            command.add_argument("--no-inherited-notes", action="store_true", help="Record the caller's assertion that no inherited material applies; requires --rationale")
             command.add_argument("--unit", action="append", help="Source-derived unit ID to classify; repeat for adjacent units")
             command.add_argument("--disposition", choices=sorted(DISPOSITIONS))
             command.add_argument("--rationale")
