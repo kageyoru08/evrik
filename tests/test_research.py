@@ -931,9 +931,10 @@ class EvidenceTests(unittest.TestCase):
 
     def invoke(self, operation, *args, expected=0, env=None):
         result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "evidence", operation,
-                                 "--project", str(self.project), *args], cwd=self.project, env=env or self.env,
-                                capture_output=True, text=True, encoding="utf-8", timeout=20)
+                                  "--project", str(self.project), *args], cwd=self.project, env=env or self.env,
+                                 capture_output=True, text=True, encoding="utf-8", timeout=20)
         self.assertEqual(result.returncode, expected, result.stderr or result.stdout)
+        self.last_evidence_stdout = result.stdout
         return json.loads(result.stderr if expected == 2 else result.stdout)
 
     def activate(self, *args):
@@ -960,8 +961,7 @@ class EvidenceTests(unittest.TestCase):
         directory = self.directory()
         return {path.name: path.read_bytes() for path in directory.iterdir()} if directory.exists() else {}
 
-    def native_readback(self, activation, call, *, sources=False):
-        literal = activation["sources_command" if sources else "readback_command"]
+    def native_page(self, literal, call, *, match=True):
         request = {"command": literal}
         self.assertEqual(self.hook("PreToolUse", call, request, name="Bash"), {})
         shell = (["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", literal]
@@ -971,8 +971,21 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
         self.assertEqual(value["status"], "emitted")
-        self.assertEqual(self.hook("PostToolUse", call, request, result.stdout, name="Bash"), {})
-        return value
+        if match:
+            self.assertEqual(self.hook("PostToolUse", call, request, result.stdout, name="Bash"), {})
+        return value, result.stdout
+
+    def native_readback(self, activation, call, *, sources=False):
+        literal = activation["sources_command" if sources else "readback_command"]
+        frames = []
+        while literal:
+            value, output = self.native_page(literal, call if not frames else call + "-" + str(len(frames)))
+            frames.append(value)
+            self.assertLessEqual(len(output.encode("utf-8")), 16384)
+            literal = value["next_command"]
+        self.assertEqual([frame["page"]["index"] for frame in frames], list(range(len(frames))))
+        return {"status": "emitted", "receipt_id": frames[0]["receipt_id"],
+                "readback": json.loads("".join(frame["page"]["text"] for frame in frames))}
 
     def test_inactive_and_root_only_activation_do_not_create_unrelated_state(self):
         request = {"search_query": [{"q": "public evidence"}], "response_length": "short"}
@@ -1070,7 +1083,7 @@ class EvidenceTests(unittest.TestCase):
     def test_saved_readback_requires_native_match_and_becomes_stale_after_correction(self):
         activation = self.activate()
         emitted = self.invoke("readback")
-        self.assertIn("Source/access table", emitted["readback"]["snapshot"]["artifacts"][0]["text"])
+        self.assertIn("Source/access table", json.loads(emitted["page"]["text"])["snapshot"]["artifacts"][0]["text"])
         status = self.invoke("check")
         self.assertTrue(status["fresh"])
         self.assertFalse(status["native_response_matched"])
@@ -1201,11 +1214,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("deferred before retrieval", deferred["reason"])
         self.assertEqual(self.inventory(), before)
         emitted = self.invoke("sources")
-        capture = emitted["readback"]["capture"]
+        emitted_bundle = json.loads(emitted["page"]["text"])
+        capture = emitted_bundle["capture"]
         self.assertEqual(capture["request"], request)
         self.assertEqual(capture["returned_text"]["content"], response)
         self.assertTrue(capture["captured_at"])
-        self.assertEqual(emitted["readback"]["remaining_unread_captures"], 0)
+        self.assertEqual(emitted_bundle["remaining_unread_captures"], 0)
         self.assertFalse(self.report.exists())
         self.assertFalse((self.project / "checkpoint.md").exists())
         references = "\n".join(ref["path"] for ref in capture["receipts"]) + "\n"
@@ -1267,6 +1281,243 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("Legacy", self.invoke("close", expected=2)["error"])
         self.assertIn("Legacy", self.hook("PreToolUse", "legacy", request)["reason"])
         self.assertTrue(self.invoke("close", "--incomplete", "--reason", "Preserve the original source boundary.")["incomplete"])
+
+    def test_paged_reader_preserves_unicode_and_requires_every_unique_native_page(self):
+        text = ('quote " slash \\ CRLF\r\n café e\u0301 漢字 😀\n' * 1300)
+        self.report.write_bytes(text.encode("utf-8"))
+        activation = self.activate()
+        first, output = self.native_page(activation["readback_command"], "page-zero")
+        self.assertLessEqual(len(output.encode("utf-8")), 16384)
+        receipt = first["receipt_id"]
+        count = first["page"]["count"]
+        self.assertGreater(count, 2)
+        self.assertFalse(self.invoke("check")["native_response_matched"])
+        self.invoke("close", expected=2)
+        original = self.inventory()
+        # Duplicate native delivery is idempotent; a distinct reread adds no coverage.
+        request = {"command": activation["readback_command"]}
+        self.assertEqual(self.hook("PostToolUse", "page-zero", request, output, name="Bash"), {})
+        self.assertEqual(self.inventory(), original)
+        zero_command = activation["readback_command"] + f" --receipt {receipt} --page 0"
+        self.native_page(zero_command, "page-zero-reread")
+        self.assertEqual(self.invoke("check")["reader_progress"]["matched_pages"], 1)
+        frames = {0: first}
+        # Native delivery order is not a coverage requirement.
+        for index in reversed(range(1, count)):
+            literal = activation["readback_command"] + f" --receipt {receipt} --page {index}"
+            frame, output = self.native_page(literal, "page-" + str(index))
+            self.assertLessEqual(len(output.encode("utf-8")), 16384)
+            frames[index] = frame
+            if index != 1:
+                self.assertFalse(self.invoke("check")["native_response_matched"])
+        raw = b"".join(frames[index]["page"]["text"].encode("utf-8") for index in range(count))
+        saved = json.loads((self.directory() / ("readback-" + receipt + ".json")).read_text(encoding="utf-8"))["value"]
+        expected = json.dumps(saved, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+        self.assertEqual(raw, expected)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), receipt)
+        self.assertEqual(json.loads(raw)["snapshot"]["artifacts"][0]["text"], text)
+        offset = 0
+        for index in range(count):
+            self.assertEqual(frames[index]["page"]["offset"], offset)
+            self.assertEqual(frames[index]["page"]["count"], count)
+            self.assertEqual(frames[index]["page"]["total_bytes"], len(raw))
+            offset += len(frames[index]["page"]["text"].encode("utf-8"))
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        aggregate_path = self.directory() / ("matched-" + receipt + ".json")
+        original_aggregate = aggregate_path.read_bytes()
+        envelope = json.loads(original_aggregate)
+        envelope["value"]["pages"].append(envelope["value"]["pages"][0])
+        envelope["sha256"] = hashlib.sha256(json.dumps(envelope["value"], sort_keys=True, separators=(",", ":"),
+                                                      ensure_ascii=False).encode("utf-8")).hexdigest()
+        aggregate_path.write_text(json.dumps(envelope), encoding="utf-8")
+        self.assertFalse(self.invoke("check")["native_response_matched"])
+        aggregate_path.write_bytes(original_aggregate)
+        self.assertTrue(self.invoke("close")["ready_to_close"])
+
+    def test_reader_pages_reject_corruption_and_mutation_without_false_coverage(self):
+        self.report.write_text("A complete public report.\n" * 900, encoding="utf-8")
+        activation = self.activate()
+        first, output = self.native_page(activation["readback_command"], "unmatched-zero", match=False)
+        altered = json.loads(output)
+        altered["page"]["text"] += "wrong"
+        wrong_receipt = json.loads(output)
+        wrong_receipt["receipt_id"] = "0" * 64
+        wrong_index = json.loads(output)
+        wrong_index["page"]["index"] = 1
+        for index, bad in enumerate(("Warning: truncated output\n" + output, output[:100],
+                                     {"stdout": output}, json.dumps(altered), json.dumps(wrong_receipt),
+                                     json.dumps(wrong_index), output.replace('"status":', '"status":"emitted","status":', 1))):
+            call = "bad-page-" + str(index)
+            request = {"command": activation["readback_command"]}
+            self.hook("PreToolUse", call, request, name="Bash")
+            before = self.inventory()
+            rejected = self.hook("PostToolUse", call, request, bad, name="Bash")
+            self.assertEqual(rejected["decision"], "block")
+            self.assertNotIn("A complete public report", json.dumps(rejected))
+            self.assertEqual(self.inventory(), before)
+            self.assertFalse(self.invoke("check")["native_response_matched"])
+        literal = activation["readback_command"] + f" --receipt {first['receipt_id']} --page 0"
+        first, _ = self.native_page(literal, "good-zero")
+        request = {"command": first["next_command"]}
+        self.hook("PreToolUse", "changed-during-page", request, name="Bash")
+        page = self.invoke("readback", "--receipt", first["receipt_id"], "--page", "1")
+        self.report.write_text("Corrected material after page emission.\n", encoding="utf-8")
+        rejected = self.hook("PostToolUse", "changed-during-page", request,
+                             json.dumps(page, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n", name="Bash")
+        self.assertEqual(rejected["decision"], "block")
+        self.assertIn("reader_current_evidence", rejected["reason"])
+        self.assertEqual(self.invoke("check")["status"], "stale")
+        self.invoke("readback", "--receipt", first["receipt_id"], "--page", "1", expected=2)
+        self.invoke("close", expected=2)
+        self.native_readback(activation, "corrected")
+        self.assertTrue(self.invoke("close")["ready_to_close"])
+
+    def test_multipage_source_defers_acknowledgement_and_rechecks_capture(self):
+        activation = self.activate("--public-web", "--record", "report.md")
+        request = {"open": [{"ref_id": "https://example.com/complete-source"}]}
+        source_text = 'Public source "quoted" 😀\r\n' * 700
+        self.hook("PreToolUse", "source", request)
+        self.assertEqual(self.hook("PostToolUse", "source", request, source_text), {})
+        first, _ = self.native_page(activation["sources_command"], "source-page-zero")
+        self.assertGreater(first["page"]["count"], 1)
+        self.assertEqual(self.hook("PreToolUse", "next-web", request)["decision"], "block")
+        status = self.invoke("check")["sources"]
+        self.assertEqual(status["reader_progress"]["matched_pages"], 1)
+        self.assertEqual(status["next_command"], first["next_command"])
+        source_post = next(self.directory().glob("web-*-post.json"))
+        original = source_post.read_bytes()
+        changed = json.loads(original)
+        changed["value"]["returned_text"]["text"] = "Changed public source after its first page."
+        changed["sha256"] = hashlib.sha256(json.dumps(changed["value"], sort_keys=True, separators=(",", ":"),
+                                                    ensure_ascii=False).encode("utf-8")).hexdigest()
+        source_post.write_text(json.dumps(changed), encoding="utf-8")
+        self.invoke("sources", "--receipt", first["receipt_id"], "--page", "1", expected=2)
+        source_post.write_bytes(original)
+        frames, literal = [first], first["next_command"]
+        while literal:
+            page, _ = self.native_page(literal, "source-page-" + str(len(frames)))
+            frames.append(page)
+            literal = page["next_command"]
+        bundle = json.loads("".join(frame["page"]["text"] for frame in frames))
+        self.assertEqual(bundle["capture"]["returned_text"]["text"], source_text)
+        self.assertEqual(self.invoke("check")["sources"]["pending_reads"], [])
+        self.assertEqual(self.hook("PreToolUse", "no-refs", request)["decision"], "block")
+        self.report.write_text("\n".join(ref["path"] for ref in bundle["capture"]["receipts"]), encoding="utf-8")
+        self.native_readback(activation, "final-source-report")
+        self.assertTrue(self.invoke("close")["ready_to_close"])
+
+    def test_reader_packing_reduces_generic_ordinary_text_calls_without_changing_content(self):
+        ordinary = "Independent observations and complete supporting details remain in this report.\n" * 900
+        self.report.write_bytes(ordinary.encode("utf-8"))
+        activation = self.activate()
+        first, output = self.native_page(activation["readback_command"], "packed-zero")
+        fixed_count = (first["page"]["total_bytes"] + 6143) // 6144  # This fixture is entirely ASCII.
+        self.assertLess(first["page"]["count"], fixed_count)
+        frames = [first]
+        wire_sizes = [len(output.encode("utf-8"))]
+        self.assertLessEqual(len(output.encode("utf-8")), 16384)
+        while frames[-1]["next_command"]:
+            frame, output = self.native_page(frames[-1]["next_command"], "packed-" + str(len(frames)))
+            self.assertLessEqual(len(output.encode("utf-8")), 16384)
+            frames.append(frame)
+            wire_sizes.append(len(output.encode("utf-8")))
+        for frame in frames[:-1]:
+            self.assertGreaterEqual(len(frame["page"]["text"].encode("utf-8")), 6144)
+        restored = json.loads("".join(frame["page"]["text"] for frame in frames))
+        self.assertEqual(restored["snapshot"]["artifacts"][0]["text"], ordinary)
+        self.reader_packing_metrics = {"scenario": "generic_ordinary_ascii", "canonical_bytes": first["page"]["total_bytes"],
+                                       "fixed_pages": fixed_count, "actual_pages": len(frames), "max_frame_bytes": max(wire_sizes)}
+        self.assertTrue(self.invoke("close")["ready_to_close"])
+
+    def test_reader_packing_reserves_long_metadata_and_rejects_smaller_than_slice_floor(self):
+        heavy = ('\\"\r\n\t e\u0301 漢字 😀 ' * 1500)
+        self.report.write_bytes(heavy.encode("utf-8"))
+        activation = self.activate()
+        session_path = self.directory() / "session.json"
+        session = json.loads(session_path.read_text(encoding="utf-8"))["value"]
+        original_command = session["activations"][-1]["readback_command"]
+
+        def save_command(padding):
+            # Synthetic command metadata for sizing only; never executed or native-matched.
+            session["activations"][-1]["readback_command"] = original_command + " --sizing-only=" + padding
+            digest = hashlib.sha256(json.dumps(session, sort_keys=True, separators=(",", ":"),
+                                               ensure_ascii=False).encode("utf-8")).hexdigest()
+            session_path.write_text(json.dumps({"value": session, "sha256": digest,
+                                                "recorded_at": "2026-01-01T00:00:00Z"}), encoding="utf-8")
+
+        save_command('quoted"\\😀' * 100)
+        first = self.invoke("readback")
+        frames = [first]
+        wire_sizes = [len(self.last_evidence_stdout.encode("utf-8"))]
+        self.assertLessEqual(len(self.last_evidence_stdout.encode("utf-8")), 16384)
+        for index in range(1, first["page"]["count"]):
+            frame = self.invoke("readback", "--receipt", first["receipt_id"], "--page", str(index))
+            self.assertLessEqual(len(self.last_evidence_stdout.encode("utf-8")), 16384)
+            frames.append(frame)
+            wire_sizes.append(len(self.last_evidence_stdout.encode("utf-8")))
+        self.assertLessEqual(len(frames), 43)
+        for frame in frames[:-1]:
+            self.assertGreaterEqual(len(frame["page"]["text"].encode("utf-8")), 6141)
+        restored = json.loads("".join(frame["page"]["text"] for frame in frames))
+        self.assertEqual(restored["snapshot"]["artifacts"][0]["text"], heavy)
+        repeated = self.invoke("readback", "--receipt", first["receipt_id"], "--page", "0")
+        self.assertEqual(repeated, first)
+        self.reader_packing_metrics = {"scenario": "escaped_unicode_long_metadata", "canonical_bytes": first["page"]["total_bytes"],
+                                       "actual_pages": len(frames), "max_frame_bytes": max(wire_sizes)}
+        self.assertFalse(self.invoke("check")["native_response_matched"])
+        # Leave less than a supported slice, even for one-byte text: do not expand into tiny pages.
+        session = json.loads(session_path.read_text(encoding="utf-8"))["value"]
+        save_command("x" * 12000)
+        before = self.inventory()
+        rejected = self.invoke("readback", expected=2)
+        self.assertIn("slice floor", rejected["error"])
+        self.assertEqual(self.inventory(), before)
+        self.assertEqual(self.last_evidence_stdout, "")
+
+    def test_legacy_reader_match_is_preserved_without_migration_or_current_credit(self):
+        activation = self.activate()
+        first = self.invoke("readback")
+        receipt = first["receipt_id"]
+        session_path = self.directory() / "session.json"
+        session = json.loads(session_path.read_text(encoding="utf-8"))["value"]
+        old = session["activations"][-1]
+        del old["reader_transport"], old["latest_sources"]
+        old["handler_sha256"] = "0" * 64
+
+        def sha(value):
+            return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                             ensure_ascii=False).encode("utf-8")).hexdigest()
+
+        def save(path, value):
+            path.write_text(json.dumps({"value": value, "sha256": sha(value),
+                                        "recorded_at": "2026-01-01T00:00:00Z"}), encoding="utf-8")
+
+        # Explicitly synthetic historical shapes; no claim of historical native execution.
+        save(session_path, session)
+        call = sha({"generation": old["id"], "tool_use_id": "synthetic-old-reader"})
+        pre = {"call": call, "phase": "PreToolUse", "status": "attempted",
+               "request_sha256": sha({"command": activation["readback_command"]})}
+        post = {**pre, "phase": "PostToolUse", "status": "native_response_matched",
+                "response_sha256": sha("synthetic old whole response"), "receipt_id": receipt, "generation": old["id"]}
+        pre_path = self.directory() / f"reader-{old['id']}-{call}-pre.json"
+        post_path = self.directory() / f"reader-{old['id']}-{call}-post.json"
+        match_path = self.directory() / f"matched-{receipt}.json"
+        for path, value in ((pre_path, pre), (post_path, post), (match_path, post)):
+            save(path, value)
+        preserved = {path: path.read_bytes() for path in (pre_path, post_path, match_path,
+                     self.directory() / f"readback-{receipt}.json")}
+        status = self.invoke("check")
+        self.assertTrue(status["native_response_matched"])
+        self.assertFalse(status["fresh"])
+        self.assertFalse(status["ready_to_close"])
+        self.invoke("readback", expected=2)
+        self.invoke("close", expected=2)
+        self.assertTrue(self.invoke("close", "--incomplete", "--reason", "Preserve the old handler generation")["incomplete"])
+        for path, raw in preserved.items():
+            self.assertEqual(path.read_bytes(), raw)
+        fresh = self.activate()
+        self.assertNotEqual(fresh["generation"], old["id"])
+        self.assertFalse(self.invoke("check")["native_response_matched"])
 
     def test_experiment_readback_retains_obligations_and_dependency_changes(self):
         self.project = make_project(Path(self.temporary.name) / "experiment")

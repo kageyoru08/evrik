@@ -1081,6 +1081,8 @@ def compare(storage: Path, baseline_id: str, candidate_id: str) -> dict:
 
 
 EVIDENCE_LIMIT = 262144
+READER_TEXT_LIMIT = 6144
+READER_OUTPUT_LIMIT = 16384
 HOOK_LIMIT = 1048576
 EVIDENCE_PRIVATE_KEYS = {"encrypted_content", "reasoning", "reasoning_content", "private_context",
                          "transcript_path", "agent_transcript_path", "session_path", "authorization",
@@ -1136,6 +1138,137 @@ def evidence_read(path: Path) -> dict:
     return evidence_envelope(path)["value"]
 
 
+def evidence_output(value: dict) -> bytes:
+    return canonical(value) + b"\n"
+
+
+def evidence_reader_command(activation: dict, reader: str, receipt_id: str, index: int) -> str:
+    return activation[reader + "_command"] + f" --receipt {receipt_id} --page {index}"
+
+
+def evidence_reader_request(activation: dict, tool_input: Any) -> tuple | None:
+    if not isinstance(tool_input, dict) or set(tool_input) != {"command"}:
+        return None
+    for reader in ("readback", "sources"):
+        command = activation.get(reader + "_command")
+        if not command:
+            continue
+        if tool_input["command"] == command:
+            return reader, None, 0
+        if activation.get("reader_transport") != "pages-v1" or not isinstance(tool_input["command"], str):
+            continue
+        suffix = re.fullmatch(re.escape(command) + r" --receipt ([0-9a-f]{64}) --page (0|[1-9][0-9]{0,2})", tool_input["command"])
+        if suffix:
+            return reader, suffix[1], int(suffix[2])
+    return None
+
+
+def evidence_reader_bundle(directory: Path, activation: dict, reader: str, receipt_id: str) -> dict:
+    if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
+        raise ResearchError("Invalid reader receipt")
+    bundle = evidence_read(safe_path(directory, f"{reader}-{receipt_id}.json"))
+    if (digest(bundle) != receipt_id or bundle.get("generation") != activation["id"]
+            or bundle.get("session_id") != directory.name or len(canonical(bundle)) > EVIDENCE_LIMIT):
+        raise ResearchError("Reader receipt binding mismatch")
+    return bundle
+
+
+def evidence_reader_frame(activation: dict, reader: str, receipt_id: str, page: dict,
+                          next_index: int | None) -> dict:
+    return {"status": "emitted", "reader": reader, "receipt_id": receipt_id,
+            "generation": activation["id"], "page": page,
+            "next_command": evidence_reader_command(activation, reader, receipt_id, next_index)
+                            if next_index is not None else None}
+
+
+def evidence_reader_pages(activation: dict, reader: str, receipt_id: str, bundle: dict) -> list[dict]:
+    raw, fragments, offset, start = canonical(bundle), [], 0, 0
+    if len(raw) > EVIDENCE_LIMIT:
+        raise ResearchError("Evidence bundle exceeds the supported return limit")
+    text = raw.decode("utf-8")
+    # N bounds every numeric field and the longest continuation index. Reserve
+    # its full command once; this is a size bound, never an emitted page.
+    reserved = evidence_reader_frame(activation, reader, receipt_id,
+                                    {"index": len(raw), "count": len(raw), "offset": len(raw),
+                                     "total_bytes": len(raw), "text": ""}, len(raw))
+    capacity = READER_OUTPUT_LIMIT - len(evidence_output(reserved))
+    empty_size = len(canonical(""))
+    while offset < len(raw):
+        end = min(offset + READER_TEXT_LIMIT, len(raw))
+        while end < len(raw) and raw[end] & 0xC0 == 0x80:
+            end -= 1
+        floor = raw[offset:end].decode("utf-8")
+        if len(canonical(floor)) - empty_size > capacity:
+            raise ResearchError("Reader slice floor exceeds the complete native output limit; coverage incomplete")
+        low, high = len(floor), min(len(text) - start, capacity)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if len(canonical(text[start:start + middle])) - empty_size <= capacity:
+                low = middle
+            else:
+                high = middle - 1
+        fragment = text[start:start + low]
+        fragments.append((offset, fragment))
+        offset += len(fragment.encode("utf-8"))
+        start += low
+    pages = []
+    for index, (offset, text) in enumerate(fragments):
+        frame = evidence_reader_frame(activation, reader, receipt_id,
+                                      {"index": index, "count": len(fragments), "offset": offset,
+                                       "total_bytes": len(raw), "text": text},
+                                      index + 1 if index + 1 < len(fragments) else None)
+        if len(evidence_output(frame)) > READER_OUTPUT_LIMIT:
+            raise ResearchError("Reader frame exceeds the complete native output limit; coverage incomplete")
+        pages.append(frame)
+    return pages
+
+
+def evidence_page_matches(directory: Path, activation: dict, reader: str, receipt_id: str,
+                          bundle: dict) -> tuple[list, list]:
+    frames = evidence_reader_pages(activation, reader, receipt_id, bundle)
+    matches = []
+    for index, frame in enumerate(frames):
+        path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
+        if not path.exists():
+            continue
+        match = evidence_read(path)
+        exact_keys(match, {"call", "phase", "status", "request_sha256", "response_sha256",
+                           "receipt_id", "generation", "page"}, "native reader page match")
+        if (not isinstance(match["call"], str) or not re.fullmatch(r"[0-9a-f]{64}", match["call"])
+                or type(match["page"]) is not int):
+            raise ResearchError("Invalid matched native call")
+        pre = evidence_read(safe_path(directory, f"reader-{activation['id']}-{match['call']}-pre.json"))
+        post = evidence_read(safe_path(directory, f"reader-{activation['id']}-{match['call']}-post.json"))
+        commands = [evidence_reader_command(activation, reader, receipt_id, index)]
+        if index == 0:
+            commands.append(activation[reader + "_command"])
+        expected_pre = {"call": match["call"], "phase": "PreToolUse", "status": "attempted",
+                        "request_sha256": match["request_sha256"]}
+        expected = {**expected_pre, "phase": "PostToolUse", "status": "reader_page_matched",
+                    "response_sha256": digest(evidence_output(frame).decode("utf-8")),
+                    "receipt_id": receipt_id, "generation": activation["id"], "page": index}
+        if (pre != expected_pre or match != post or match != expected
+                or match["request_sha256"] not in {digest({"command": command}) for command in commands}):
+            raise ResearchError("Invalid native reader page binding")
+        matches.append({"index": index, "call": match["call"]})
+    return frames, matches
+
+
+def evidence_reader_aggregate(activation: dict, reader: str, receipt_id: str, matches: list) -> dict:
+    return {"transport": "pages-v1", "reader": reader, "receipt_id": receipt_id,
+            "generation": activation["id"], "status": "source_response_matched" if reader == "sources" else "native_response_matched",
+            "pages": matches}
+
+
+def evidence_reader_progress(directory: Path, activation: dict, reader: str, receipt_id: str, bundle: dict) -> dict:
+    frames, matches = evidence_page_matches(directory, activation, reader, receipt_id, bundle)
+    present = {match["index"] for match in matches}
+    # A complete set without its aggregate can be repaired by an explicit local reread.
+    next_index = next((index for index in range(len(frames)) if index not in present), 0)
+    return {"matched_pages": len(matches), "total_pages": len(frames),
+            "next_command": evidence_reader_command(activation, reader, receipt_id, next_index)}
+
+
 def evidence_write(path: Path, value: dict, *, immutable: bool = False) -> None:
     if immutable and path.exists():
         if evidence_read(path) != value:
@@ -1161,7 +1294,12 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
         # Retain original generations without inventing source acknowledgements.
         if isinstance(item, dict) and "record" in item:
             fields |= {"record", "sources_command"}
+        if isinstance(item, dict) and "reader_transport" in item:
+            fields |= {"reader_transport", "latest_sources"}
         exact_keys(item, fields, "evidence activation")
+        if "reader_transport" in item and (item["reader_transport"] != "pages-v1"
+                or (item["latest_sources"] is not None and not re.fullmatch(r"[0-9a-f]{64}", str(item["latest_sources"])))):
+            raise ResearchError("Invalid reader transport binding")
         if (not isinstance(item["id"], str) or not re.fullmatch(r"[0-9a-f]{32}", item["id"])
                 or item["state"] not in {"active", "closed"} or type(item["public_web"]) is not bool
                 or type(item["experiment"]) is not bool or not isinstance(item["artifacts"], list)
@@ -1252,6 +1390,19 @@ def evidence_captures(project: Path, directory: Path, activation: dict) -> tuple
 
 
 def evidence_native_match(directory: Path, activation: dict, receipt_id: str, reader: str, matched: dict) -> bool:
+    if activation.get("reader_transport") == "pages-v1":
+        exact_keys(matched, {"transport", "reader", "receipt_id", "generation", "status", "pages"}, "native reader aggregate")
+        if not isinstance(matched["pages"], list):
+            raise ResearchError("Invalid native reader page coverage")
+        for item in matched["pages"]:
+            exact_keys(item, {"index", "call"}, "native reader page reference")
+            if type(item["index"]) is not int or not isinstance(item["call"], str):
+                raise ResearchError("Invalid native reader page reference")
+        bundle = evidence_reader_bundle(directory, activation, reader, receipt_id)
+        frames, matches = evidence_page_matches(directory, activation, reader, receipt_id, bundle)
+        return (len(matches) == len(frames)
+                and b"".join(frame["page"]["text"].encode("utf-8") for frame in frames) == canonical(bundle)
+                and matched == evidence_reader_aggregate(activation, reader, receipt_id, matches))
     exact_keys(matched, {"call", "phase", "status", "request_sha256", "response_sha256", "receipt_id", "generation"}, "native reader match")
     if not re.fullmatch(r"[0-9a-f]{64}", str(matched["call"])):
         raise ResearchError("Invalid matched native call")
@@ -1266,7 +1417,7 @@ def evidence_native_match(directory: Path, activation: dict, receipt_id: str, re
 
 
 def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[dict, list]:
-    result = {"ready": True, "pending_reads": [], "missing_record_refs": []}
+    result = {"ready": True, "pending_reads": [], "missing_record_refs": [], "next_command": None}
     if not activation["public_web"]:
         return result, []
     if "record" not in activation:
@@ -1300,12 +1451,21 @@ def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[
                 raise ResearchError("Evidence record exceeds the supported whole-text limit")
             text = raw.decode("utf-8")
     result["pending_reads"] = [capture["id"] for capture in pending]
+    if pending:
+        result["next_command"] = activation["sources_command"]
+        receipt_id = activation.get("latest_sources")
+        if receipt_id:
+            bundle = evidence_reader_bundle(directory, activation, "sources", receipt_id)
+            if bundle.get("capture") == pending[0]:
+                result["reader_progress"] = evidence_reader_progress(directory, activation, "sources", receipt_id, bundle)
+                result["next_command"] = result["reader_progress"]["next_command"]
     result["missing_record_refs"] = [ref["path"] for capture in captures for ref in capture["receipts"]
                                      if ref["path"] not in text]
     result["ready"] = not (pending or result["missing_record_refs"])
     if not result["ready"]:
         result["issue"] = ("Saved sources require their exact native reader response and receipt paths in the current record. "
-                           "Run sources_command, retain its receipt paths in " + activation["record"] + ", then check again.")
+                           "Complete every pending reader page using next_command, retain its receipt paths in "
+                           + activation["record"] + ", then check again.")
     return result, pending
 
 
@@ -1327,11 +1487,24 @@ def evidence_snapshot(project: Path, storage: Path, directory: Path, activation:
             "web": web}
 
 
+def evidence_reader_current(project: Path, storage: Path, directory: Path, activation: dict,
+                            reader: str, receipt_id: str, bundle: dict) -> None:
+    if reader == "readback":
+        if (activation["latest_readback"] != receipt_id
+                or bundle.get("snapshot") != evidence_snapshot(project, storage, directory, activation)):
+            raise ResearchError("Reader snapshot changed; preserve it and explicitly read back current evidence")
+    elif bundle.get("capture") is not None:
+        _, captures = evidence_captures(project, directory, activation)
+        if bundle["capture"] not in captures:
+            raise ResearchError("Source capture differs from saved receipts")
+
+
 def evidence_status(project: Path, storage: Path, directory: Path, activation: dict) -> dict:
     result = {"status": "missing_readback", "fresh": False, "native_response_matched": False,
               "ready_to_close": False, "semantic_review_verified": False,
               "semantic_review_note": "False is expected: semantic judgment is outside machine proof and is not a normal-close prerequisite.",
               "latest_readback": activation["latest_readback"], "readback_command": activation["readback_command"],
+              "next_readback_command": activation["readback_command"],
               "sources_command": activation.get("sources_command")}
     try:
         result["sources"], _ = evidence_sources(project, directory, activation)
@@ -1348,6 +1521,10 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
             match = safe_path(directory, f"matched-{receipt_id}.json")
             if match.exists():
                 result["native_response_matched"] = evidence_native_match(directory, activation, receipt_id, "readback", evidence_read(match))
+            if result["fresh"] and activation.get("reader_transport") == "pages-v1":
+                result["reader_progress"] = evidence_reader_progress(directory, activation, "readback", receipt_id, bundle)
+                result["next_readback_command"] = (None if result["native_response_matched"]
+                                                   else result["reader_progress"]["next_command"])
             result["status"] = "current" if result["fresh"] else "stale"
         result["ready_to_close"] = (result["fresh"] and result["native_response_matched"]
                                     and snapshot["web"]["complete"] and snapshot["dependencies"]["ready"]
@@ -1365,8 +1542,8 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
         ("evidence_state_unavailable", "issue" in result)) if needed]
     if not result["native_response_matched"] and "issue" not in result:
         result["reader_recovery"] = ("No native response match is recorded for the latest readback. "
-                                     "Run readback_command alone in a separate native call with complete output, "
-                                     "inspect the saved contents, then check or close separately.")
+                                     "Run next_readback_command alone in a separate native call with complete output, "
+                                     "inspect every page, then check or close separately.")
     return result
 
 
@@ -1405,7 +1582,8 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     commands[reader + "_command"] = ("& " + " ".join("'" + part.replace("'", "''") + "'" for part in argv)
                                                      if os.name == "nt" else shlex.join(argv))
                 activation = {**boundary, **commands, "id": uuid.uuid4().hex, "state": "active",
-                              "opened_at": utc_now(), "closed_at": None, "reason": None, "latest_readback": None}
+                              "opened_at": utc_now(), "closed_at": None, "reason": None, "latest_readback": None,
+                              "reader_transport": "pages-v1", "latest_sources": None}
                 state = state or {"schema_version": 1, "project": str(project), "session_id": session_id,
                                   "owner_thread_id": session_id, "activations": []}
                 state["activations"].append(activation)
@@ -1419,6 +1597,17 @@ def evidence_action(args: argparse.Namespace) -> dict:
         if args.operation in {"readback", "sources"}:
             if activation["handler_sha256"] != file_digest(Path(__file__)):
                 raise ResearchError("Evidence handler changed; preserve and close the old activation")
+            if activation.get("reader_transport") != "pages-v1":
+                raise ResearchError("Preserve and close the old reader activation before using the current transport")
+            if (args.receipt is None) != (args.page is None):
+                raise ResearchError("Reader continuation requires both --receipt and --page")
+            if args.receipt is not None:
+                bundle = evidence_reader_bundle(directory, activation, args.operation, args.receipt)
+                evidence_reader_current(project, storage, directory, activation, args.operation, args.receipt, bundle)
+                frames = evidence_reader_pages(activation, args.operation, args.receipt, bundle)
+                if not 0 <= args.page < len(frames):
+                    raise ResearchError("Reader page is outside the saved bundle")
+                return frames[args.page]
             if args.operation == "sources":
                 sources, pending = evidence_sources(project, directory, activation)
                 if not activation.get("sources_command"):
@@ -1433,11 +1622,11 @@ def evidence_action(args: argparse.Namespace) -> dict:
             if len(canonical(bundle)) > EVIDENCE_LIMIT:
                 raise ResearchError("Evidence bundle exceeds the supported return limit; coverage incomplete")
             receipt_id = digest(bundle)
+            frames = evidence_reader_pages(activation, args.operation, receipt_id, bundle)
             evidence_write(safe_path(directory, f"{args.operation}-{receipt_id}.json"), bundle, immutable=True)
-            if args.operation == "readback":
-                activation["latest_readback"] = receipt_id
-                evidence_write(safe_path(directory, "session.json"), state)
-            return {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
+            activation["latest_readback" if args.operation == "readback" else "latest_sources"] = receipt_id
+            evidence_write(safe_path(directory, "session.json"), state)
+            return frames[0]
         status = evidence_status(project, storage, directory, activation)
         if args.operation == "close":
             if bool(args.incomplete) != bool(args.reason and args.reason.strip()):
@@ -1541,9 +1730,8 @@ def evidence_hook() -> dict:
             return {}
         activation = state["activations"][-1]
         tool_input = event.get("tool_input")
-        reader = next((kind for kind in ("readback", "sources") if name == "Bash"
-                       and activation.get(kind + "_command")
-                       and tool_input == {"command": activation[kind + "_command"]}), None)
+        reader_request = evidence_reader_request(activation, tool_input) if name == "Bash" else None
+        reader = reader_request[0] if reader_request else None
         active = reader or (name == "webrun" and activation["public_web"])
         if not active:
             return {}
@@ -1554,9 +1742,8 @@ def evidence_hook() -> dict:
             if activation["state"] != "active":
                 return {}
             tool_input = event.get("tool_input")
-            reader = next((kind for kind in ("readback", "sources") if name == "Bash"
-                           and activation.get(kind + "_command")
-                           and tool_input == {"command": activation[kind + "_command"]}), None)
+            reader_request = evidence_reader_request(activation, tool_input) if name == "Bash" else None
+            reader = reader_request[0] if reader_request else None
             if not reader and not (name == "webrun" and activation["public_web"]):
                 return {}
             request_ok = bool(reader) or evidence_public_request(tool_input)
@@ -1567,6 +1754,15 @@ def evidence_hook() -> dict:
                             + sources["issue"] + " After this local repair, the original web operation may proceed."}
             if activation["handler_sha256"] != file_digest(Path(__file__)):
                 raise ResearchError("Handler identity changed")
+            if reader and reader_request[1] is not None:
+                failure_stage = "reader_saved_bundle"
+                requested_bundle = evidence_reader_bundle(directory, activation, reader, reader_request[1])
+                failure_stage = "reader_current_evidence"
+                evidence_reader_current(project, storage, directory, activation, reader, reader_request[1], requested_bundle)
+                failure_stage = "reader_response_match"
+                if reader_request[2] >= len(evidence_reader_pages(activation, reader, reader_request[1], requested_bundle)):
+                    raise ResearchError("Reader page is outside the saved bundle")
+                failure_stage = "attempt_binding"
             tool_id = event.get("tool_use_id")
             if not isinstance(tool_id, str) or not tool_id or len(tool_id) > 256:
                 raise ResearchError("Missing native call identity")
@@ -1593,24 +1789,25 @@ def evidence_hook() -> dict:
                     failure_stage = "reader_response_json"
                     returned = json.loads(response, parse_constant=reject_constant, object_pairs_hook=unique_json_object)
                     failure_stage = "reader_response_schema"
-                    exact_keys(returned, {"status", "receipt_id", "readback"}, "reader return")
+                    exact_keys(returned, {"status", "reader", "receipt_id", "generation", "page", "next_command"}, "reader return")
+                    exact_keys(returned["page"], {"index", "count", "offset", "total_bytes", "text"}, "reader page")
                     receipt_id = returned["receipt_id"]
                     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
                         raise ResearchError("Invalid reader receipt")
                     failure_stage = "reader_saved_bundle"
-                    bundle = evidence_read(safe_path(directory, f"{reader}-{receipt_id}.json"))
+                    bundle = evidence_reader_bundle(directory, activation, reader, receipt_id)
                     failure_stage = "reader_response_match"
-                    if (returned != {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
-                            or digest(bundle) != receipt_id or bundle["generation"] != activation["id"]
-                            or bundle["session_id"] != session_id):
+                    frames = evidence_reader_pages(activation, reader, receipt_id, bundle)
+                    index = returned["page"]["index"]
+                    if (type(index) is not int or not 0 <= index < len(frames)
+                            or (reader_request[1] is not None and reader_request[1] != receipt_id)
+                            or reader_request[2] != index or returned != frames[index]
+                            or response != evidence_output(frames[index]).decode("utf-8")):
                         raise ResearchError("Reader response differs from saved evidence")
-                    if reader == "sources" and bundle["capture"] is not None:
-                        failure_stage = "reader_source_match"
-                        _, captures = evidence_captures(project, directory, activation)
-                        if bundle["capture"] not in captures:
-                            raise ResearchError("Source capture differs from saved receipts")
-                    record.update(status="source_response_matched" if reader == "sources" else "native_response_matched",
-                                  receipt_id=receipt_id, generation=activation["id"])
+                    failure_stage = "reader_current_evidence"
+                    evidence_reader_current(project, storage, directory, activation, reader, receipt_id, bundle)
+                    record.update(status="reader_page_matched", receipt_id=receipt_id,
+                                  generation=activation["id"], page=index)
                 else:
                     text = evidence_text(response) if request_ok and matched_pre else None
                     record["status"] = "captured_text" if text is not None else "incomplete"
@@ -1623,13 +1820,16 @@ def evidence_hook() -> dict:
                 raise ResearchError("Conflicting native response")
             evidence_write(path, record, immutable=True)
             if reader and phase == "PostToolUse":
-                if reader == "readback":
-                    evidence_write(safe_path(directory, f"matched-{record['receipt_id']}.json"), record, immutable=True)
-                elif bundle["capture"] is not None:
-                    match_path = safe_path(directory, f"source-matched-{bundle['capture']['id']}.json")
-                    # One native match suffices; retain its original attribution on later reads.
-                    if not match_path.exists():
-                        evidence_write(match_path, record, immutable=True)
+                page_path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
+                if not page_path.exists():
+                    evidence_write(page_path, record, immutable=True)
+                frames, matches = evidence_page_matches(directory, activation, reader, receipt_id, bundle)
+                if len(matches) == len(frames):
+                    match_path = (safe_path(directory, f"matched-{receipt_id}.json") if reader == "readback" else
+                                  safe_path(directory, f"source-matched-{bundle['capture']['id']}.json")
+                                  if bundle["capture"] is not None else None)
+                    if match_path is not None and not match_path.exists():
+                        evidence_write(match_path, evidence_reader_aggregate(activation, reader, receipt_id, matches), immutable=True)
             if record["status"] == "incomplete":
                 failure_stage = "capture_validation"
                 raise ResearchError("Unsupported or filtered capture")
@@ -1676,6 +1876,9 @@ def main() -> int:
             action.add_argument("--public-web", action="store_true")
             action.add_argument("--record", help="Working UTF-8 record selected from --artifact; required with --public-web")
             action.add_argument("--experiment", action="store_true")
+        if name in {"readback", "sources"}:
+            action.add_argument("--receipt", help="Exact saved reader receipt returned by the previous page")
+            action.add_argument("--page", type=int, help="Index in the immutable saved reader bundle")
         if name == "close":
             action.add_argument("--incomplete", action="store_true")
             action.add_argument("--reason")
@@ -1689,7 +1892,7 @@ def main() -> int:
             except (TypeError, AttributeError, RecursionError) as exc:
                 raise ResearchError("Invalid evidence state or input") from exc
             if result:
-                print(json.dumps(result, indent=2, allow_nan=False))
+                sys.stdout.buffer.write(evidence_output(result))
             return 0
         project, storage = project_paths(args.project, create=args.action == "init")
         if args.action == "init":

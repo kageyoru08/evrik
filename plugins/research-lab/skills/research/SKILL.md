@@ -202,10 +202,15 @@ After saving, read the relevant contents of the actual saved deliverables
 and compare them with the retained evidence.
 
 For an activated session, run the exact `evidence readback` invocation
-returned by activation and expose its complete output. It reads all declared
-saved text and returns the attached obligation/run view. Review those actual
-contents; a helper's emission or native response match does not establish
-understanding. Resolve an incomplete or truncated return before relying on it.
+returned by activation, expose each complete page, and follow the returned
+literal `next_command` until the whole receipt is covered. Each page is a
+separate native call within the existing budget; a larger output request
+cannot override a platform cap. The pages contain all declared saved text
+and the attached obligation/run view. Review those actual contents in
+context; a helper's emission or native response match does not establish
+understanding. Use `evidence check` for pending-page commands. Incomplete or
+truncated pages cannot support closure; never substitute hashes or invoke
+hooks manually.
 
 For literature, cover all source/access statements and citation locators.
 For experiments, read the current checkpoint, including inherited-action

@@ -33,8 +33,9 @@ unrelated work. Ordinary single-fact answers do not activate this workflow.
 
 For public-web capture, `--record` selects the working record from the declared
 artifacts. After each captured operation, run the literal source-reader
-invocation returned by activation as its own native command and return its
-complete output. It reads saved source evidence without needing the final
+invocation returned by activation as its own native command and return each
+complete output page. Follow its literal `next_command` until all pages of
+that receipt have been exposed and inspected. It reads saved source evidence without needing the final
 report to exist. Inspect the actual request, returned text, source identities
 and capture date; retain the generated receipt references in the working
 record with your coverage, selection and material evidence notes. Complete
@@ -51,16 +52,27 @@ access, version relevance or citation accuracy. Arbitrary writes and chat
 are outside this prerequisite.
 
 Use the literal platform invocation returned by activation for readback.
-Return its complete output through the native tool, with an adequate output
-budget. The helper reads every declared small UTF-8 file and saves an
+The reader returns bounded JSON frames containing complete canonical-JSON
+text segments of one saved bundle. Small bundles have one page. Return each
+complete frame through a separate native call, then follow its exact
+`next_command`; do not combine all pages into one tool output. Requested
+output budgets can be capped by the native platform, so a larger request
+does not guarantee complete delivery. The helper reads every declared small UTF-8 file and saves an
 immutable bundle under `.research/evidence/`. Missing, unsafe, oversized or
 non-text artifacts are incomplete; no heading filter or silent truncation
-substitutes for the declared contents. Read and assess that bundle against
+substitutes for the declared contents. Read every segment in its bundle
+context and assess that bundle against
 the question and retained sources. The generated obligation/run view is a
 closure companion; carry its material state into the actual checkpoint.
 
 `check` compares current deliverables and attached evidence with that
-readback. Relevant changes require another readback. A helper emission and a
+readback. Relevant changes require another readback; never mix pages from
+different receipts. Each page needs its exact native request/response match,
+and the complete unique page set must reconstruct the saved bundle before
+the reader is acknowledged. Page delivery order is not an acceptance rule;
+missing pages and duplicate reads cannot satisfy coverage. Count every page
+and failed call within the task's existing budget, reserving final review
+and correction work. A helper emission and a
 matching native response are separate observations; neither proves model
 comprehension or that outer code exposed all text. Ordinary close requires
 fresh required records, supported native reader matches and retained source
@@ -68,9 +80,14 @@ references, and then disables capture. It does not label the research
 scientifically complete.
 
 `check` and a refused ordinary close name the unmet conditions and return the
-literal reader commands. If the latest readback has no native match, run its
-command alone, expose the complete output and inspect the saved contents;
-then check or close in a separate call. A missing match does not establish
+literal reader commands and pending-page progress. If the latest readback
+has no native match, use `next_readback_command`; for pending sources use
+the source status's `next_command`. Run it alone, expose the complete output
+and inspect the saved contents;
+then check or close in a separate call. A continuation reads the same
+immutable receipt and refuses changed current evidence. Truncated or
+unmatched pages remain incomplete; no automatic retry, manual hook invocation
+or hash-only substitute is supported. A missing match does not establish
 that the native route is unavailable. `semantic_review_verified: false` is
 expected: semantic judgment is outside machine proof and does not prevent
 ordinary close.
