@@ -23,6 +23,8 @@ Example requests:
 
 > Use $research to resume this investigation. Inspect saved runs before launching anything and explain what the existing evidence supports.
 
+> Use $research to hold a peer meeting on this research decision. Have participants exchange evidence and objections, then review and explicitly accept the same final decision or preserve what remains unresolved.
+
 ## Refresh an existing installation
 
 For an installed plugin from this Git marketplace, refresh only Research Lab:
@@ -40,12 +42,14 @@ Check that the response has no errors, then start a new Codex task and select **
 | Component | Responsibility |
 | --- | --- |
 | `research` skill | Research questions, source assessment, protocols, decisions, and reports |
-| Conditional references | Literature, local experiments, and evidence guidance loaded only when needed |
+| Conditional references | Literature, local experiments, evidence, and peer-meeting guidance loaded only when needed |
 | Python runner | Source archives, input identities, durable records, one launch per run ID, validation, and numerical comparison |
 | Native evidence hooks | Explicit session capture on supported public web calls and exact saved-reader response matching |
 | Small regression example | A complete local baseline/candidate exercise with an isolated Git project |
 
 The skill uses available native tools. No specific model, connector, external consultation, or other skill is required. Delegation is optional; a subagent does not automatically receive a Git worktree.
+
+For a requested collective decision, the [peer-meeting guidance](plugins/research-lab/skills/research/references/parallelism.md) gives participants their own initial positions, reciprocal critique and explicit review of the same saved decision. The facilitator manages the record and routing with equal substantive standing. Direct native messages are preferred; a necessary relay preserves complete attributed content and is labeled. Unresolved material objections or missing acceptance leave a provisional or blocked result. These instructions add no scheduler or service, and consensus does not prove correctness or complete defect discovery.
 
 For supported native root sessions, declare the report/checkpoint paths with
 `evidence activate`, use `--public-web --record CHECKPOINT` for authorized public

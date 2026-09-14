@@ -34,7 +34,9 @@ BASELINE_PLUGIN_FILES = {
     "skills/research/references/experiments.md",
     "skills/research/references/evidence.md",
 }
-PLUGIN_FILES = BASELINE_PLUGIN_FILES | {"hooks/hooks.json"}
+PLUGIN_FILES = BASELINE_PLUGIN_FILES | {
+    "hooks/hooks.json", "skills/research/references/parallelism.md",
+}
 HOOK_COMMAND = 'python3 -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 HOOK_COMMAND_WINDOWS = 'python -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 BASELINE = "37bf04427c14c204450cd56576852573cab360b7"

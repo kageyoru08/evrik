@@ -18,6 +18,13 @@ local experiments or their resumption, and both when the question requires
 both. Complete experiment entry before experimental edits or launches.
 Literature-only work needs no Git or experiment protocol.
 
+For an explicit peer meeting, or a consequential authorized research choice
+where competing explanations can change the decision, read
+[references/parallelism.md](references/parallelism.md). Ordinary independent
+questions may still be delegated. Never call a decision jointly adopted
+without every rostered participant's explicit review and acceptance of the
+current saved body under the agreed rule.
+
 Use the existing research note or checkpoint as the working record. Create
 only a necessary record within the authorized area, preserve historical
 entries, and carry its current state forward instead of reconstructing it
