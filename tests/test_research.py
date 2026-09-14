@@ -983,6 +983,74 @@ class EvidenceTests(unittest.TestCase):
         self.invoke("activate", "--artifact", "different.md", expected=2)
         self.assertFalse((self.project / ".research/protocol.json").exists())
 
+    @unittest.skipUnless(os.name == "nt", "Short-name aliases and junctions are Windows root boundaries")
+    def test_windows_short_alias_keeps_canonical_identity_and_rejects_junction(self):
+        import ctypes
+        from ctypes import wintypes
+        import shutil
+        import stat
+
+        powershell = shutil.which("powershell.exe")
+        if powershell is None:
+            self.skipTest("Windows junction construction unavailable: powershell.exe not installed")
+        original = self.project.resolve()
+        short_name = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+        short_name.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        short_name.restype = wintypes.DWORD
+        size = short_name(str(original), None, 0)
+        self.assertGreater(size, 0, ctypes.get_last_error())
+        buffer = ctypes.create_unicode_buffer(size)
+        written = short_name(str(original), buffer, size)
+        self.assertTrue(0 < written < size, ctypes.get_last_error())
+        alias = Path(buffer.value)
+        if alias == original:
+            self.skipTest("Windows filesystem did not expose a distinct 8.3 alias")
+        self.assertEqual(alias.resolve(), original)
+        self.assertTrue(alias.samefile(original))
+        for component in (*reversed(alias.parents), alias):
+            metadata = component.lstat()
+            self.assertFalse(stat.S_ISLNK(metadata.st_mode))
+            self.assertFalse(metadata.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+        self.project = alias
+        self.assertEqual(self.invoke("check")["status"], "not_activated")
+        self.assertFalse((original / ".research").exists())
+        activation = self.activate()
+        self.assertIn("'" + str(original).replace("'", "''") + "'", activation["readback_command"])
+        session = json.loads((self.directory() / "session.json").read_text(encoding="utf-8"))
+        self.assertEqual(session["value"]["project"], str(original))
+        self.native_readback(activation, "alias-reader")
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+
+        owned = Path(self.temporary.name).resolve()
+        junction = owned / "linked root"
+        self.assertTrue(original.is_relative_to(owned))
+        self.assertTrue(junction.absolute().is_relative_to(owned))
+        self.assertFalse(junction.exists())
+        before = {path.relative_to(original): path.read_bytes() for path in original.rglob("*") if path.is_file()}
+        try:
+            result = subprocess.run(
+                [powershell, "-NoProfile", "-NonInteractive", "-Command",
+                 "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction -Path $env:RESEARCH_TEST_LINK -Target $env:RESEARCH_TEST_TARGET | Out-Null"],
+                env=dict(self.env, RESEARCH_TEST_LINK=str(junction), RESEARCH_TEST_TARGET=str(original)),
+                capture_output=True, text=True, encoding="utf-8", timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(junction.resolve(), original)
+            self.project = junction
+            for operation, args in (("check", ()), ("activate", ("--artifact", "report.md"))):
+                self.assertRegex(self.invoke(operation, *args, expected=2)["error"], "link|junction|reparse")
+            self.project = original
+            request = {"command": activation["readback_command"]}
+            self.assertEqual(self.hook("PreToolUse", "linked-cwd", request, name="Bash", cwd=str(junction)), {})
+            self.assertEqual({path.relative_to(original): path.read_bytes() for path in original.rglob("*") if path.is_file()}, before)
+        finally:
+            self.project = original
+            if junction.exists():
+                self.assertEqual(junction.resolve(), original)
+                os.rmdir(junction)  # Remove only the owned junction, never its target.
+        self.assertEqual({path.relative_to(original): path.read_bytes() for path in original.rglob("*") if path.is_file()}, before)
+
     def test_saved_readback_requires_native_match_and_becomes_stale_after_correction(self):
         activation = self.activate()
         emitted = self.invoke("readback")

@@ -1099,9 +1099,17 @@ def evidence_id(value: Any) -> str:
 
 def evidence_paths(argument: str) -> tuple[Path, Path]:
     project = Path(argument).absolute()
-    safe_path(project)
     if not project.is_dir():
         raise ResearchError("Evidence --project must be an existing directory")
+    # Inspect the selected spelling before resolve expands Windows short names.
+    # Resolving first would also hide a selected link or ancestor junction.
+    for component in (*reversed(project.parents), project):
+        metadata = component.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or (os.name == "nt" and
+                metadata.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+            raise ResearchError(f"Links or reparse points are not allowed in evidence project paths: {component}")
+    project = project.resolve()
+    safe_path(project)
     return project, safe_path(project, ".research")
 
 
@@ -1409,7 +1417,7 @@ def evidence_hook() -> dict:
         if phase not in {"PreToolUse", "PostToolUse"} or name not in {"webrun", "Bash"}:
             return {}
         project, storage = evidence_paths(str(Path.cwd()))
-        if not isinstance(event.get("cwd"), str) or Path(event["cwd"]).absolute() != project:
+        if not isinstance(event.get("cwd"), str) or evidence_paths(event["cwd"])[0] != project:
             return {}
         session_id = evidence_id(event.get("session_id"))
         directory = safe_path(storage, "evidence", session_id)
