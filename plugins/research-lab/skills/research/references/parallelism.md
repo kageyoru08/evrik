@@ -27,9 +27,13 @@ Give peers the common question, evidence, allowed work area, excluded operations
 file ownership and remaining shared limits, without the facilitator's preliminary
 answer. Read-only actions still have to satisfy these boundaries. Include
 applicable entry prerequisites, their order and known resolved guidance paths.
-Peers must read required guidance not yet inspected before dependent scientific
-operations; do not batch those operations with unread entry instructions. Use fresh
-context where supported; disclose inherited exposure rather than claiming
+Peers must finish required guidance in bounded reads before dependent scientific
+operations; do not batch those operations with unread guidance. If ordinary local
+guidance output is incomplete, read its missing required passages within the
+existing budget and access restrictions. This does not repair an earlier entry
+violation or authorize repeating source retrieval, evaluator or evidence-reader
+actions; honor explicit stops. Use fresh context where supported; disclose
+inherited exposure rather than claiming
 cognitive independence. Each participant preserves its initial position,
 supporting evidence and uncertainties before seeing others' conclusions. Keep
 author-owned notes append-only: retain every earlier entry and append corrections
