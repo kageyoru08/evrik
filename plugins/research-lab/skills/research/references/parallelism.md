@@ -23,13 +23,17 @@ dismiss a disputed material blocker alone or declare an unreviewed decision
 joint. Every participant may request evidence, propose alternatives, revise a
 position and withhold adoption. Shared standing does not expand permission.
 
-Give peers the common question, evidence, constraints and their useful scope,
-without the facilitator's preliminary answer. Use fresh context where supported;
-disclose inherited exposure rather than claiming cognitive independence. Each
-participant preserves its initial position, supporting evidence and uncertainties
-before seeing others' conclusions. Keep all material initial positions. Append
-later reasoning to author-owned notes instead of rewriting those initials; use
-one writer for the shared decision body and avoid unnecessary new records.
+Give peers the common question, evidence, allowed work area, excluded operations,
+file ownership and remaining shared limits, without the facilitator's preliminary
+answer. Read-only actions still have to satisfy these boundaries. Use fresh
+context where supported; disclose inherited exposure rather than claiming
+cognitive independence. Each participant preserves its initial position,
+supporting evidence and uncertainties before seeing others' conclusions. Keep
+author-owned notes append-only: retain every earlier entry and append corrections
+that identify the affected claim and supporting evidence. Preserving an initial
+prefix alone does not preserve later entries. Use one writer for the shared
+decision body, which may be revised subject to renewed review below; avoid
+unnecessary new records.
 
 ## Exchange evidence and objections
 
@@ -41,14 +45,19 @@ guess a broadcast, resume or close API, inspect private capability caches, or
 assume that sending a message wakes an idle peer.
 
 Prefer direct peer messages for evidence-specific questions, objections and
-responses. If the surface requires relay, carry the author's complete identified
-message or direct the recipient to that exact saved author-owned content.
-Preserve attribution, version and the recipient's evidence-specific response;
-label the route as relay. The facilitator must not select or paraphrase away
+responses. Before dispatch, save the complete material question, objection or
+response in the author's existing note with its evidence reference and an identity that
+later appends preserve. Send the exact text or a pointer to that identified
+content. Administrative notices need no duplicate substantive record. When using
+facilitator relay, record the workflow reason and any observed native limitation;
+keep unknown availability unknown. Carry the complete attributed content or its
+pointer and label the route as relay. The facilitator must not select or paraphrase away
 objections during transport. A successful send, saved note or notification alone
 does not prove consumption: the recipient must read the identified content and
-address its evidence. Reuse existing peers for subsequent turns; do not create
-a new user-facing task for every round or duplicate substantive dispatch.
+record an evidence-specific response tied to it. Distinguish observed native
+sends from shared-note consumption; saved content does not reveal an opaque
+message envelope. Reuse existing peers for subsequent turns; do not create a new
+user-facing task for every round or duplicate substantive dispatch.
 
 Require a reciprocal critique/response cycle. Permit at most one additional
 cycle for a material unresolved issue within the entry budget. A useful
@@ -103,11 +112,18 @@ native fallback for their own authorized retrieval. They must not impersonate
 the root or claim inherited automatic capture. Share one canonical evaluator
 ledger and total budget; parallel work does not create extra launches or retries.
 
-Track actual work and remaining limits. A normal wait timeout consumes its wait
-allowance and is not a failed send or proof that a peer failed. Continue only
-within the remaining shared time and permitted activations; never reset the
-deadline or blindly repeat an ambiguous substantive action. Retain missing
-participation and unresolved execution truthfully.
+Track each participant's actual work and remaining limits in the existing notes.
+Count every attempted underlying invocation once, including shell reads, every
+file patch, failed/rejected calls, evidence commands, sends, follow-ups and waits
+in their applicable categories. Count each tool invoked by a wrapper without
+adding the wrapper as another underlying call. Reconcile participant subtotals
+against visible calls and returns before
+reporting a shared total, including final review, corrections and closure. Mark
+incomplete coverage as unknown rather than claiming an exact reconciled count.
+A normal wait timeout consumes its wait allowance and is not a failed send or
+proof that a peer failed. Continue only within the remaining shared time and
+permitted activations; never reset the deadline or blindly repeat an ambiguous
+substantive action. Retain missing participation and unresolved execution truthfully.
 
 Read the actual final saved body and participant responses after the last edit.
 Report scientific correctness, reciprocal influence, the route actually used,
