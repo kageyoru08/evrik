@@ -696,7 +696,7 @@ class InputBoundaryTests(unittest.TestCase):
             "real_git = runner.git\n"
             "def blocked_git(project, *args):\n"
             " result = real_git(project, *args)\n"
-            " if args and args[0] == 'archive':\n"
+            " if 'archive' in args and '--format=zip' in args:\n"
             f"  Path({str(reached)!r}).write_text('ready', encoding='utf-8')\n"
             "  deadline = time.monotonic() + 15\n"
             f"  while not Path({str(release)!r}).exists():\n"
