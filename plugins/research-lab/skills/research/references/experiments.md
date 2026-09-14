@@ -28,7 +28,7 @@ List files whose content must stay fixed between the baseline and candidate. Kee
 
 Inspect runner validation errors for the exact accepted values. Additional scientific decisions belong in research notes when they have no executable representation. Matching metadata is a necessary operational check, not proof that the evaluator obeyed the design.
 
-When the runner reports an environment, ownership, or permission error, preserve and report the concrete blocker. Do not change host/Git security configuration, invent trust entries, or switch to broader permissions to work around it. Continue independent authorized work. Route genuinely required protected actions through their native, action-specific user approval request.
+When Git or the runner reports an environment, ownership, or permission error, preserve and report the concrete blocker. Do not change host/Git security configuration, invent trust entries, or evade host checks or native refusals by changing permissions or execution routes outside the authorized native approval path. A plain permission error does not establish that native approval was requested or refused. For a genuinely required action within scope, prepare its concrete command and effects and use the available native, action-specific approval path; honor its actual decision or report its unavailability. Continue independent authorized work.
 
 ## Prepare attributable source
 

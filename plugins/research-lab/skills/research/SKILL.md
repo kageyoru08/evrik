@@ -262,9 +262,13 @@ concurrent edits require them; subagents do not automatically get worktrees.
 Review and integrate their evidence. File isolation does not grant permissions.
 
 Keep existing host protections and approval boundaries authoritative. Do not
-reconfigure host/Git security, widen permissions, or reroute a denied action
-to work around a failure. Report the concrete blocker and continue independent
-authorized work. Never fabricate a protected-action approval.
+reconfigure host/Git security or evade host checks or native refusals by changing
+permissions or execution routes outside the authorized native approval path.
+A necessary action within the authorized scope may use the available native,
+action-specific approval path with its concrete command and effects; that is not
+a host-policy change. Honor its actual decision, retain unavailable or unresolved
+permission as a blocker, and continue independent authorized work. Never fabricate
+approval.
 
 Research authorization does not itself authorize purchases, credit resets,
 global safety changes, or interference with unrelated work. Neither this

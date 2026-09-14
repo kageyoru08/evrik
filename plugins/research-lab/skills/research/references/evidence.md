@@ -63,8 +63,14 @@ The reader returns bounded JSON frames containing complete canonical-JSON
 text segments of one saved bundle. Small bundles have one page. Return each
 complete frame through a separate native call, then follow its exact
 `next_command`; do not combine all pages into one tool output. Requested
-output budgets can be capped by the native platform, so a larger request
-does not guarantee complete delivery. The helper reads every declared small UTF-8 file and saves an
+output capacity must cover every initial, continuation and recovery frame,
+up to 16,384 UTF-8 bytes including the newline, through the native execution
+tool and any outer result wrapper. Do not reuse a summary-sized output cap.
+For a token-based limit, request at least 16,384 output tokens when supported;
+bytes and tokens are different units, so this conservative allowance is not
+a delivery guarantee. Output budgets can be capped by the native platform, so
+a larger request does not guarantee complete delivery.
+The helper reads every declared small UTF-8 file and saves an
 immutable bundle under `.research/evidence/`. Missing, unsafe, oversized or
 non-text artifacts are incomplete; no heading filter or silent truncation
 substitutes for the declared contents. Read every segment in its bundle
