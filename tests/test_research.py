@@ -1085,8 +1085,21 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.inventory(), before)
         request = {"command": activation["readback_command"]}
         self.hook("PreToolUse", "wrong-response-shape", request, name="Bash")
-        self.assertEqual(self.hook("PostToolUse", "wrong-response-shape", request,
-                                   {"stdout": json.dumps(emitted)}, name="Bash")["decision"], "block")
+        before_failure = self.inventory()
+        rejected = self.hook("PostToolUse", "wrong-response-shape", request,
+                             {"stdout": json.dumps(emitted)}, name="Bash")
+        self.assertEqual(rejected["decision"], "block")
+        self.assertIn("[stage=reader_response_type]", rejected["reason"])
+        self.assertNotIn("Source/access table", json.dumps(rejected))
+        self.assertEqual(self.inventory(), before_failure)
+        self.hook("PreToolUse", "malformed-reader-json", request, name="Bash")
+        before_failure = self.inventory()
+        rejected = self.hook("PostToolUse", "malformed-reader-json", request,
+                             '{"private":"reader-secret', name="Bash")
+        self.assertEqual(rejected["decision"], "block")
+        self.assertIn("[stage=reader_response_json]", rejected["reason"])
+        self.assertNotIn("reader-secret", json.dumps(rejected))
+        self.assertEqual(self.inventory(), before_failure)
         self.assertFalse(self.invoke("check")["native_response_matched"])
         wrong_request = {"command": activation["readback_command"] + "\n"}
         self.assertEqual(self.hook("PostToolUse", "unmatched", wrong_request, json.dumps(emitted), name="Bash"), {})

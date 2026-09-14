@@ -1520,6 +1520,7 @@ def evidence_public_request(value: Any) -> bool:
 
 def evidence_hook() -> dict:
     active = False
+    failure_stage = "active_capture"
     try:
         raw = sys.stdin.buffer.read(HOOK_LIMIT + 1)
         if len(raw) > HOOK_LIMIT:
@@ -1546,6 +1547,7 @@ def evidence_hook() -> dict:
         active = reader or (name == "webrun" and activation["public_web"])
         if not active:
             return {}
+        failure_stage = "attempt_binding"
         with project_lock(storage, wait_seconds=1):
             state = evidence_session(project, directory, session_id)
             activation = state["activations"][-1]
@@ -1585,19 +1587,25 @@ def evidence_hook() -> dict:
                 if reader:
                     if not matched_pre:
                         raise ResearchError("Reader request does not match its attempt")
+                    failure_stage = "reader_response_type"
                     if not isinstance(response, str):
                         raise ResearchError("Unsupported reader response")
+                    failure_stage = "reader_response_json"
                     returned = json.loads(response, parse_constant=reject_constant, object_pairs_hook=unique_json_object)
+                    failure_stage = "reader_response_schema"
                     exact_keys(returned, {"status", "receipt_id", "readback"}, "reader return")
                     receipt_id = returned["receipt_id"]
                     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
                         raise ResearchError("Invalid reader receipt")
+                    failure_stage = "reader_saved_bundle"
                     bundle = evidence_read(safe_path(directory, f"{reader}-{receipt_id}.json"))
+                    failure_stage = "reader_response_match"
                     if (returned != {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
                             or digest(bundle) != receipt_id or bundle["generation"] != activation["id"]
                             or bundle["session_id"] != session_id):
                         raise ResearchError("Reader response differs from saved evidence")
                     if reader == "sources" and bundle["capture"] is not None:
+                        failure_stage = "reader_source_match"
                         _, captures = evidence_captures(project, directory, activation)
                         if bundle["capture"] not in captures:
                             raise ResearchError("Source capture differs from saved receipts")
@@ -1608,6 +1616,7 @@ def evidence_hook() -> dict:
                     record["status"] = "captured_text" if text is not None else "incomplete"
                     if text is not None:
                         record["returned_text"] = text
+            failure_stage = "receipt_persistence"
             if path.exists() and evidence_read(path) != record:
                 evidence_write(safe_path(directory, f"web-{activation['id']}-{call}-conflict-{digest(record)}.json"),
                                {"call": call, "phase": "conflict", "status": "incomplete", "sha256": digest(record)}, immutable=True)
@@ -1622,11 +1631,12 @@ def evidence_hook() -> dict:
                     if not match_path.exists():
                         evidence_write(match_path, record, immutable=True)
             if record["status"] == "incomplete":
+                failure_stage = "capture_validation"
                 raise ResearchError("Unsupported or filtered capture")
         return {}
     except (ResearchError, OSError, ValueError, KeyError, TypeError, RecursionError):
         # No raw input, private paths, response text or exception detail is logged.
-        return {"decision": "block", "reason": "Research evidence capture incomplete; preserve the original operation and do not retry retrieval. Native delivery handling remains a platform boundary."} if active else {}
+        return {"decision": "block", "reason": f"Research evidence capture incomplete [stage={failure_stage}]; preserve the original operation and do not retry retrieval. Native delivery handling remains a platform boundary."} if active else {}
 
 
 def main() -> int:
