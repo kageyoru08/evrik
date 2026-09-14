@@ -34,6 +34,13 @@ When Git or the runner reports an environment, ownership, or permission error, p
 
 Use an existing Git repository root. Initialize with `init --project PATH`, then establish the explicit inherited-material entry below before experimental edits or launches. `init` reports entry status without silently declaring absence or resolving pending units. Ensure `.research/` is ignored before preparation; the runner reports this requirement and does not change `.gitignore`. Commit the intended source and any ignore-file change after reviewing the diff. `prepare` requires a clean checkout and rejects uncommitted or untracked source changes.
 
+After changing an implementation, verify its declared input/output contract on
+the exact candidate before selecting it or reporting it as valid. Use existing
+authorized checks for the applicable types and boundaries within the task's
+budget and exceptions. Reuse completed checks that cover that source; a baseline
+check or metric improvement does not validate changed code. Retain failed or
+unfinished checks in the decision.
+
 Resolve the runner's absolute path from the installed skill's `scripts/research.py`, then invoke it with the available Python 3.11+ interpreter. All commands emit JSON:
 
 ```text

@@ -222,7 +222,8 @@ do not substitute for saved-content review. Relevant passages suffice; no
 particular command or every-byte reread is required.
 
 Correct discrepancies and read back the affected saved content after changes.
-Preserve historical entries and original evidence. Reconcile requested work
+For a historical record, append the correction and its evidence while retaining
+the earlier factual entry. Preserve original evidence. Reconcile requested work
 against performed actions, not merely the existence of output files.
 
 Use `evidence check` and then `evidence close` for an activated session after
