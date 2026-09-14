@@ -7,8 +7,12 @@ Use available search and reading tools. Keep the search proportional to the ques
 Use the evidence reference's explicit `--public-web` activation for the
 supported native `webrun` search/open/find route. The synchronous hooks retain
 attempts and supported returned strings or strict `text`/`input_text` blocks
-before the post hook returns. Inspect the actual receipt and source IDs,
-then link it from the working record with coverage and selection notes.
+before the post hook returns. Declare the working artifact with `--record`.
+Use activation's exact `evidence sources` command to read the saved response
+through the native tool. Inspect its source IDs and actual passages, then
+retain its generated receipt references in the working record with coverage
+and selection notes. Pending source reads and missing references defer the
+next supported web operation and ordinary close.
 No per-call JavaScript capture wrapper is needed on this activated route.
 
 The filter rejects unsupported, oversized or private/opaque representations;
@@ -18,6 +22,10 @@ actual outcome and any surviving response; do not automatically retry the
 retrieval. Missing post evidence remains incomplete. Hook registration alone
 does not establish successful execution, before-model delivery, access to a
 full page, or understanding of its contents.
+
+A local source-reader/record prerequisite deferral precedes web execution.
+Complete the indicated local work before submitting the intended operation;
+this differs from repeating an already executed retrieval after capture failed.
 
 ### Fallback when activated capture is unavailable
 

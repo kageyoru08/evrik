@@ -48,8 +48,13 @@ Check that the response has no errors, then start a new Codex task and select **
 The skill uses available native tools. No specific model, connector, external consultation, or other skill is required. Delegation is optional; a subagent does not automatically receive a Git worktree.
 
 For supported native root sessions, declare the report/checkpoint paths with
-`evidence activate`, use `--public-web` for authorized public source capture,
-and add `--experiment` to attach real reconciled run state. `evidence readback`
+`evidence activate`, use `--public-web --record CHECKPOINT` for authorized public
+source capture and its declared working record, and add `--experiment` to attach
+real reconciled run state. `evidence sources` returns saved source responses;
+the next supported web call and ordinary close require its matched native
+response and retained receipt references in that working record. This checks
+source-reading steps and references, not the meaning of the evidence notes.
+`evidence readback`
 returns the declared saved text; `check` detects relevant changes and `close`
 requires fresh evidence before disabling capture. Use the exact reader
 invocation returned by activation. These commands need an existing directory,

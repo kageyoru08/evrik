@@ -10,7 +10,8 @@ without Git. Declare the actual report and working checkpoint paths relative
 to that directory; do not create a fake experiment protocol for literature.
 
 ```text
-evidence activate --project ROOT --artifact REPORT --artifact CHECKPOINT --public-web
+evidence activate --project ROOT --artifact REPORT --artifact CHECKPOINT --public-web --record CHECKPOINT
+evidence sources --project ROOT
 evidence readback --project ROOT
 evidence check --project ROOT
 evidence close --project ROOT
@@ -30,6 +31,25 @@ receive matching-event input even while inactive; inactive sessions retain
 no response body and create no review obligation. Close the session before
 unrelated work. Ordinary single-fact answers do not activate this workflow.
 
+For public-web capture, `--record` selects the working record from the declared
+artifacts. After each captured operation, run the literal source-reader
+invocation returned by activation as its own native command and return its
+complete output. It reads saved source evidence without needing the final
+report to exist. Inspect the actual request, returned text, source identities
+and capture date; retain the generated receipt references in the working
+record with your coverage, selection and material evidence notes. Complete
+any remaining pending reads before another source operation.
+
+The next supported web call waits for the matched source-reader response and
+current record references. A local prerequisite refusal occurs before web
+execution; satisfy that local requirement before submitting the intended
+operation. A capture failure remains a separate incomplete operation whose
+surviving evidence must be preserved. Ordinary close rechecks the references
+so a rewritten checkpoint cannot silently discard them. Exact response and
+reference checks do not assess the scientific meaning of the notes, source
+access, version relevance or citation accuracy. Arbitrary writes and chat
+are outside this prerequisite.
+
 Use the literal platform invocation returned by activation for readback.
 Return its complete output through the native tool, with an adequate output
 budget. The helper reads every declared small UTF-8 file and saves an
@@ -43,8 +63,17 @@ closure companion; carry its material state into the actual checkpoint.
 readback. Relevant changes require another readback. A helper emission and a
 matching native response are separate observations; neither proves model
 comprehension or that outer code exposed all text. Ordinary close requires
-fresh required records and the supported native reader match, and then
-disables capture. It does not label the research scientifically complete.
+fresh required records, supported native reader matches and retained source
+references, and then disables capture. It does not label the research
+scientifically complete.
+
+`check` and a refused ordinary close name the unmet conditions and return the
+literal reader commands. If the latest readback has no native match, run its
+command alone, expose the complete output and inspect the saved contents;
+then check or close in a separate call. A missing match does not establish
+that the native route is unavailable. `semantic_review_verified: false` is
+expected: semantic judgment is outside machine proof and does not prevent
+ordinary close.
 
 When a required capability remains unavailable, preserve the concrete cause
 with `evidence close --project ROOT --incomplete --reason TEXT`. That closes

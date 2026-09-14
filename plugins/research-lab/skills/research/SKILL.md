@@ -27,8 +27,9 @@ Read [references/evidence.md](references/evidence.md) for the native evidence
 commands. For supported research sessions, explicitly activate the declared
 saved deliverables before source operations or experimental edits/launches;
 experiment activation follows the inherited-material entry below. Include
-the working checkpoint among the deliverables. Use `--public-web` only for
-authorized public source capture, and `--experiment` to attach existing runner
+the working checkpoint among the deliverables. For authorized public source
+capture, use `--public-web --record CHECKPOINT` to name that declared working
+artifact. Use `--experiment` to attach existing runner
 state. Activation does not prove that native hooks are enabled or trusted.
 If the supported session, interpreter or hook route is unavailable, retain
 that limitation and use the reference's explicit fallback within scope.
@@ -117,9 +118,14 @@ are leads; opening them alone is not discovery.
 
 Capture each completed search or batch before further discovery or synthesis.
 For an activated supported native web route, the plugin hook records the
-actual request and response. Inspect the saved receipt before using it as
-captured evidence. Link it from the working record and add brief coverage and
-selection notes; do not copy its raw fields again. A missing receipt,
+actual request and response. Run the exact `evidence sources` invocation
+returned by activation and expose its complete output. Inspect the returned
+saved source, retain its generated receipt references in the declared working
+record, and add brief coverage and selection notes. Complete any remaining
+pending source reads before further discovery; do not copy raw fields again.
+The next supported web operation and ordinary close require the matched
+source-reader response and retained references. These checks establish neither
+source relevance nor meaningful assessment. A missing receipt,
 unsupported body or capture error is incomplete evidence, not successful
 automatic capture. Do not repeat retrieval to conceal a recording failure.
 
@@ -142,8 +148,12 @@ source-instruction handling requirements.
 
 Use the same activated capture path for bounded source-reading responses,
 or the literature reference's explicit fallback when that path is unavailable.
-Retain each actual open/find request and its returned passage or access error,
-verify the saved response, then expose it for synthesis. A find that returns
+Retain each actual open/find request and its returned passage or access error.
+Use the saved-source reader and update the working record before synthesis.
+A local prerequisite deferral happens before retrieval: complete the indicated
+source read and record update before submitting that intended operation.
+Distinguish it from a failed capture after retrieval, which must not trigger
+a repeated retrieval to replace missing evidence. A find that returns
 only locations needs a bounded open for material text. Metadata-only output
 and unwrapped calls do not establish captured passage access.
 

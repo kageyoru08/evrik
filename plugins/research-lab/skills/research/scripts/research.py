@@ -775,7 +775,8 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
         temporary.mkdir()
         archive_path = temporary / "source.zip"
         try:
-            git(project, "archive", "--format=zip", "--output=" + str(archive_path), commit)
+            git(project, "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+                "archive", "--format=zip", "--output=" + str(archive_path), commit)
             with zipfile.ZipFile(archive_path) as archive:
                 files = snapshot_files(archive)
                 data = data_evidence(archive, files, protocol["data_paths"])
@@ -1122,13 +1123,17 @@ def evidence_artifact(project: Path, name: str) -> Path:
     return path
 
 
-def evidence_read(path: Path) -> dict:
+def evidence_envelope(path: Path) -> dict:
     envelope = read_json(path)
     exact_keys(envelope, {"value", "sha256", "recorded_at"}, "evidence receipt")
     if (not isinstance(envelope["value"], dict) or digest(envelope["value"]) != envelope["sha256"]
             or not isinstance(envelope["recorded_at"], str) or not envelope["recorded_at"]):
         raise ResearchError("Invalid evidence receipt")
-    return envelope["value"]
+    return envelope
+
+
+def evidence_read(path: Path) -> dict:
+    return evidence_envelope(path)["value"]
 
 
 def evidence_write(path: Path, value: dict, *, immutable: bool = False) -> None:
@@ -1151,8 +1156,12 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
             or not state["activations"]):
         raise ResearchError("Invalid evidence session binding")
     for item in state["activations"]:
-        exact_keys(item, {"id", "artifacts", "public_web", "experiment", "handler_sha256", "readback_command",
-                          "state", "opened_at", "closed_at", "reason", "latest_readback"}, "evidence activation")
+        fields = {"id", "artifacts", "public_web", "experiment", "handler_sha256", "readback_command",
+                  "state", "opened_at", "closed_at", "reason", "latest_readback"}
+        # Retain original generations without inventing source acknowledgements.
+        if isinstance(item, dict) and "record" in item:
+            fields |= {"record", "sources_command"}
+        exact_keys(item, fields, "evidence activation")
         if (not isinstance(item["id"], str) or not re.fullmatch(r"[0-9a-f]{32}", item["id"])
                 or item["state"] not in {"active", "closed"} or type(item["public_web"]) is not bool
                 or type(item["experiment"]) is not bool or not isinstance(item["artifacts"], list)
@@ -1169,6 +1178,13 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
             evidence_artifact(project, name)
         if len(set(item["artifacts"])) != len(item["artifacts"]):
             raise ResearchError("Duplicate evidence artifacts")
+        if "record" in item:
+            if item["public_web"]:
+                if (item["record"] not in item["artifacts"] or not isinstance(item["sources_command"], str)
+                        or not item["sources_command"]):
+                    raise ResearchError("Invalid evidence source boundary")
+            elif item["record"] is not None or item["sources_command"] is not None:
+                raise ResearchError("Source boundary requires public web activation")
     if any(item["state"] != "closed" for item in state["activations"][:-1]):
         raise ResearchError("Prior evidence activation is not closed")
     return state
@@ -1210,6 +1226,89 @@ def evidence_dependencies(project: Path, storage: Path, experiment: bool) -> dic
     return result
 
 
+def evidence_captures(project: Path, directory: Path, activation: dict) -> tuple[dict, list]:
+    catalog, calls, complete = [], {}, True
+    for path in sorted(directory.glob(f"web-{activation['id']}-*.json")):
+        envelope = evidence_envelope(safe_path(directory, path.name))
+        record = envelope["value"]
+        reference = {"path": str(path.relative_to(project)), "sha256": file_digest(path)}
+        catalog.append(reference)
+        calls.setdefault(record["call"], {})[record["phase"]] = (record, envelope["recorded_at"],
+                                                               {**reference, "path": path.relative_to(project).as_posix()})
+        complete = complete and record["status"] in {"attempted", "captured_text"}
+    captures = []
+    for phases in calls.values():
+        complete = complete and {key: value[0]["status"] for key, value in phases.items()} == {
+            "PreToolUse": "attempted", "PostToolUse": "captured_text"}
+        if "PreToolUse" not in phases or "PostToolUse" not in phases:
+            continue
+        pre, post = phases["PreToolUse"], phases["PostToolUse"]
+        if (pre[0]["status"] == "attempted" and post[0]["status"] == "captured_text"
+                and pre[0]["request_sha256"] == post[0]["request_sha256"]):
+            references = [pre[2], post[2]]
+            captures.append({"id": digest(references), "request": pre[0]["request"], "captured_at": post[1],
+                             "receipts": references, "returned_text": post[0]["returned_text"]})
+    return {"complete": complete, "receipts": catalog}, captures
+
+
+def evidence_native_match(directory: Path, activation: dict, receipt_id: str, reader: str, matched: dict) -> bool:
+    exact_keys(matched, {"call", "phase", "status", "request_sha256", "response_sha256", "receipt_id", "generation"}, "native reader match")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(matched["call"])):
+        raise ResearchError("Invalid matched native call")
+    post = evidence_read(safe_path(directory, f"reader-{activation['id']}-{matched['call']}-post.json"))
+    pre = evidence_read(safe_path(directory, f"reader-{activation['id']}-{matched['call']}-pre.json"))
+    expected_pre = {"call": matched["call"], "phase": "PreToolUse", "status": "attempted",
+                    "request_sha256": digest({"command": activation[reader + "_command"]})}
+    return (matched == post and pre == expected_pre and matched["request_sha256"] == pre["request_sha256"]
+            and matched["receipt_id"] == receipt_id and matched["generation"] == activation["id"]
+            and matched["status"] == ("source_response_matched" if reader == "sources" else "native_response_matched")
+            and matched["phase"] == "PostToolUse")
+
+
+def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[dict, list]:
+    result = {"ready": True, "pending_reads": [], "missing_record_refs": []}
+    if not activation["public_web"]:
+        return result, []
+    if "record" not in activation:
+        return {**result, "ready": False, "issue": "Legacy public-web activation has no source-reader boundary; preserve it and close incomplete before a new explicit activation."}, []
+    _, captures = evidence_captures(project, directory, activation)
+    pending = []
+    for capture in captures:
+        match_path = safe_path(directory, f"source-matched-{capture['id']}.json")
+        matched = False
+        if match_path.exists():
+            match = evidence_read(match_path)
+            receipt_id = match.get("receipt_id")
+            if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
+                raise ResearchError("Invalid source reader receipt")
+            bundle = evidence_read(safe_path(directory, f"sources-{receipt_id}.json"))
+            matched = (digest(bundle) == receipt_id and bundle.get("capture") == capture
+                       and bundle.get("generation") == activation["id"]
+                       and bundle.get("session_id") == directory.name
+                       and evidence_native_match(directory, activation, receipt_id, "sources", match))
+        if not matched:
+            pending.append(capture)
+    text = ""
+    if captures:
+        path = evidence_artifact(project, activation["record"])
+        if path.exists():
+            if not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
+                raise ResearchError("Evidence record must be a regular UTF-8 file")
+            with path.open("rb") as stream:
+                raw = stream.read(EVIDENCE_LIMIT + 1)
+            if len(raw) > EVIDENCE_LIMIT:
+                raise ResearchError("Evidence record exceeds the supported whole-text limit")
+            text = raw.decode("utf-8")
+    result["pending_reads"] = [capture["id"] for capture in pending]
+    result["missing_record_refs"] = [ref["path"] for capture in captures for ref in capture["receipts"]
+                                     if ref["path"] not in text]
+    result["ready"] = not (pending or result["missing_record_refs"])
+    if not result["ready"]:
+        result["issue"] = ("Saved sources require their exact native reader response and receipt paths in the current record. "
+                           "Run sources_command, retain its receipt paths in " + activation["record"] + ", then check again.")
+    return result, pending
+
+
 def evidence_snapshot(project: Path, storage: Path, directory: Path, activation: dict) -> dict:
     artifacts, total = [], 0
     for name in activation["artifacts"]:
@@ -1223,22 +1322,19 @@ def evidence_snapshot(project: Path, storage: Path, directory: Path, activation:
             raise ResearchError("Evidence readback exceeds the supported whole-text limit; coverage incomplete")
         artifacts.append({"path": name, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
                           "text": raw.decode("utf-8")})
-    catalog, calls, complete = [], {}, True
-    for path in sorted(directory.glob(f"web-{activation['id']}-*.json")):
-        record = evidence_read(safe_path(directory, path.name))
-        catalog.append({"path": str(path.relative_to(project)), "sha256": file_digest(path)})
-        calls.setdefault(record["call"], {})[record["phase"]] = record["status"]
-        complete = complete and record["status"] in {"attempted", "captured_text"}
-    complete = complete and all(phases == {"PreToolUse": "attempted", "PostToolUse": "captured_text"}
-                                for phases in calls.values())
+    web, _ = evidence_captures(project, directory, activation)
     return {"artifacts": artifacts, "dependencies": evidence_dependencies(project, storage, activation["experiment"]),
-            "web": {"complete": complete, "receipts": catalog}}
+            "web": web}
 
 
 def evidence_status(project: Path, storage: Path, directory: Path, activation: dict) -> dict:
     result = {"status": "missing_readback", "fresh": False, "native_response_matched": False,
-              "ready_to_close": False, "semantic_review_verified": False}
+              "ready_to_close": False, "semantic_review_verified": False,
+              "semantic_review_note": "False is expected: semantic judgment is outside machine proof and is not a normal-close prerequisite.",
+              "latest_readback": activation["latest_readback"], "readback_command": activation["readback_command"],
+              "sources_command": activation.get("sources_command")}
     try:
+        result["sources"], _ = evidence_sources(project, directory, activation)
         snapshot = evidence_snapshot(project, storage, directory, activation)
         result["web"] = snapshot["web"]
         result["dependencies_ready"] = snapshot["dependencies"]["ready"]
@@ -1251,27 +1347,26 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
                                and activation["handler_sha256"] == file_digest(Path(__file__)))
             match = safe_path(directory, f"matched-{receipt_id}.json")
             if match.exists():
-                matched = evidence_read(match)
-                exact_keys(matched, {"call", "phase", "status", "request_sha256", "response_sha256", "receipt_id", "generation"}, "native reader match")
-                if not re.fullmatch(r"[0-9a-f]{64}", str(matched["call"])):
-                    raise ResearchError("Invalid matched native call")
-                post = evidence_read(safe_path(directory, f"reader-{activation['id']}-{matched['call']}-post.json"))
-                pre = evidence_read(safe_path(directory, f"reader-{activation['id']}-{matched['call']}-pre.json"))
-                expected_pre = {"call": matched["call"], "phase": "PreToolUse", "status": "attempted",
-                                "request_sha256": digest({"command": activation["readback_command"]})}
-                result["native_response_matched"] = (matched == post and pre == expected_pre
-                                                     and matched["request_sha256"] == pre["request_sha256"]
-                                                     and matched["receipt_id"] == receipt_id
-                                                     and matched["generation"] == activation["id"]
-                                                     and matched["status"] == "native_response_matched"
-                                                     and matched["phase"] == "PostToolUse")
+                result["native_response_matched"] = evidence_native_match(directory, activation, receipt_id, "readback", evidence_read(match))
             result["status"] = "current" if result["fresh"] else "stale"
         result["ready_to_close"] = (result["fresh"] and result["native_response_matched"]
-                                    and snapshot["web"]["complete"] and snapshot["dependencies"]["ready"])
+                                    and snapshot["web"]["complete"] and snapshot["dependencies"]["ready"]
+                                    and result["sources"]["ready"])
         if result["fresh"] and not result["ready_to_close"]:
             result["status"] = "incomplete"
     except (ResearchError, OSError, ValueError, KeyError, TypeError) as exc:
         result.update(status="incomplete", issue=str(exc))
+    result["unmet"] = [name for name, needed in (
+        ("current_artifact_readback", not result["fresh"]),
+        ("latest_native_reader_match", not result["native_response_matched"]),
+        ("complete_public_capture", result.get("web", {}).get("complete") is False),
+        ("experiment_dependencies", result.get("dependencies_ready") is False),
+        ("saved_source_read_and_record_refs", result.get("sources", {}).get("ready") is False),
+        ("evidence_state_unavailable", "issue" in result)) if needed]
+    if not result["native_response_matched"] and "issue" not in result:
+        result["reader_recovery"] = ("No native response match is recorded for the latest readback. "
+                                     "Run readback_command alone in a separate native call with complete output, "
+                                     "inspect the saved contents, then check or close separately.")
     return result
 
 
@@ -1284,6 +1379,10 @@ def evidence_action(args: argparse.Namespace) -> dict:
     if args.operation == "activate":
         for name in args.artifact:
             evidence_artifact(project, name)
+        if args.public_web and (args.record is None or args.record not in args.artifact):
+            raise ResearchError("Public web activation requires --record equal to one declared --artifact")
+        if args.record is not None and not args.public_web:
+            raise ResearchError("--record requires --public-web")
         if args.experiment:
             evidence_dependencies(project, storage, True)
         directory.mkdir(parents=True, exist_ok=True)
@@ -1294,16 +1393,18 @@ def evidence_action(args: argparse.Namespace) -> dict:
         activation = state["activations"][-1] if state else None
         if args.operation == "activate":
             boundary = {"artifacts": sorted(set(args.artifact)), "public_web": args.public_web,
-                        "experiment": args.experiment, "handler_sha256": file_digest(Path(__file__))}
+                        "experiment": args.experiment, "handler_sha256": file_digest(Path(__file__)), "record": args.record}
             if activation and activation["state"] == "active":
-                if any(activation[key] != value for key, value in boundary.items()):
+                if any(activation.get(key) != value for key, value in boundary.items()):
                     raise ResearchError("Active evidence scope differs; close it honestly before a new activation")
             else:
-                argv = [sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()),
-                        "evidence", "readback", "--project", str(project)]
-                command = ("& " + " ".join("'" + part.replace("'", "''") + "'" for part in argv)
-                           if os.name == "nt" else shlex.join(argv))
-                activation = {**boundary, "id": uuid.uuid4().hex, "readback_command": command, "state": "active",
+                commands = {"sources_command": None}
+                for reader in ("readback", "sources") if args.public_web else ("readback",):
+                    argv = [sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()),
+                            "evidence", reader, "--project", str(project)]
+                    commands[reader + "_command"] = ("& " + " ".join("'" + part.replace("'", "''") + "'" for part in argv)
+                                                     if os.name == "nt" else shlex.join(argv))
+                activation = {**boundary, **commands, "id": uuid.uuid4().hex, "state": "active",
                               "opened_at": utc_now(), "closed_at": None, "reason": None, "latest_readback": None}
                 state = state or {"schema_version": 1, "project": str(project), "session_id": session_id,
                                   "owner_thread_id": session_id, "activations": []}
@@ -1311,27 +1412,40 @@ def evidence_action(args: argparse.Namespace) -> dict:
                 evidence_write(safe_path(directory, "session.json"), state)
             return {"status": "active", "session_id": session_id, "generation": activation["id"],
                     "readback_command": activation["readback_command"], "artifacts": activation["artifacts"],
+                    "sources_command": activation.get("sources_command"), "record": activation.get("record"),
                     "evidence_directory": str(directory.relative_to(project)), "semantic_review_verified": False}
         if activation["state"] == "closed":
             return {"status": "closed", "reason": activation["reason"], "semantic_review_verified": False}
-        if args.operation == "readback":
+        if args.operation in {"readback", "sources"}:
             if activation["handler_sha256"] != file_digest(Path(__file__)):
                 raise ResearchError("Evidence handler changed; preserve and close the old activation")
-            bundle = {"session_id": session_id, "generation": activation["id"], "emitted_at": utc_now(),
-                      "snapshot": evidence_snapshot(project, storage, directory, activation)}
+            if args.operation == "sources":
+                sources, pending = evidence_sources(project, directory, activation)
+                if not activation.get("sources_command"):
+                    raise ResearchError(sources.get("issue", "Sources reader requires explicit public-web activation"))
+                bundle = {"session_id": session_id, "generation": activation["id"],
+                          "capture": pending[0] if pending else None,
+                          "remaining_unread_captures": max(0, len(pending) - 1),
+                          "missing_record_refs": sources["missing_record_refs"]}
+            else:
+                bundle = {"session_id": session_id, "generation": activation["id"], "emitted_at": utc_now(),
+                          "snapshot": evidence_snapshot(project, storage, directory, activation)}
             if len(canonical(bundle)) > EVIDENCE_LIMIT:
                 raise ResearchError("Evidence bundle exceeds the supported return limit; coverage incomplete")
             receipt_id = digest(bundle)
-            evidence_write(safe_path(directory, f"readback-{receipt_id}.json"), bundle, immutable=True)
-            activation["latest_readback"] = receipt_id
-            evidence_write(safe_path(directory, "session.json"), state)
+            evidence_write(safe_path(directory, f"{args.operation}-{receipt_id}.json"), bundle, immutable=True)
+            if args.operation == "readback":
+                activation["latest_readback"] = receipt_id
+                evidence_write(safe_path(directory, "session.json"), state)
             return {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
         status = evidence_status(project, storage, directory, activation)
         if args.operation == "close":
             if bool(args.incomplete) != bool(args.reason and args.reason.strip()):
                 raise ResearchError("Incomplete close requires --incomplete and a nonempty --reason together")
             if not args.incomplete and not status["ready_to_close"]:
-                raise ResearchError("Evidence is not ready to close: " + status["status"])
+                error = ResearchError("Evidence is not ready to close: " + status.get("sources", {}).get("issue", status["status"]))
+                error.evidence_status = status
+                raise error
             activation.update(state="closed", closed_at=utc_now(),
                               reason=args.reason if args.incomplete else "Current evidence and native response matched; semantics not verified")
             evidence_write(safe_path(directory, "session.json"), state)
@@ -1385,7 +1499,7 @@ def evidence_public_request(value: Any) -> bool:
                          "open": ({"ref_id"}, {"ref_id", "lineno"}),
                          "find": ({"ref_id", "pattern"}, {"ref_id", "pattern"})}[operation]
     items = value[operation]
-    if not isinstance(items, list) or not 1 <= len(items) <= 4:
+    if not isinstance(items, list) or not items or (operation == "search_query" and len(items) > 4):
         return False
     for item in items:
         if not isinstance(item, dict) or not required <= set(item) <= allowed:
@@ -1426,7 +1540,9 @@ def evidence_hook() -> dict:
             return {}
         activation = state["activations"][-1]
         tool_input = event.get("tool_input")
-        reader = name == "Bash" and tool_input == {"command": activation["readback_command"]}
+        reader = next((kind for kind in ("readback", "sources") if name == "Bash"
+                       and activation.get(kind + "_command")
+                       and tool_input == {"command": activation[kind + "_command"]}), None)
         active = reader or (name == "webrun" and activation["public_web"])
         if not active:
             return {}
@@ -1436,9 +1552,17 @@ def evidence_hook() -> dict:
             if activation["state"] != "active":
                 return {}
             tool_input = event.get("tool_input")
-            reader = name == "Bash" and tool_input == {"command": activation["readback_command"]}
+            reader = next((kind for kind in ("readback", "sources") if name == "Bash"
+                           and activation.get(kind + "_command")
+                           and tool_input == {"command": activation[kind + "_command"]}), None)
             if not reader and not (name == "webrun" and activation["public_web"]):
                 return {}
+            request_ok = bool(reader) or evidence_public_request(tool_input)
+            if not reader and request_ok and phase == "PreToolUse":
+                sources, _ = evidence_sources(project, directory, activation)
+                if not sources["ready"]:
+                    return {"decision": "block", "reason": "Web request deferred before retrieval; no capture attempt was recorded. "
+                            + sources["issue"] + " After this local repair, the original web operation may proceed."}
             if activation["handler_sha256"] != file_digest(Path(__file__)):
                 raise ResearchError("Handler identity changed")
             tool_id = event.get("tool_use_id")
@@ -1447,7 +1571,6 @@ def evidence_hook() -> dict:
             call = digest({"generation": activation["id"], "tool_use_id": tool_id})
             prefix = f"{'reader' if reader else 'web'}-{activation['id']}-{call}"
             path = safe_path(directory, f"{prefix}-{'pre' if phase == 'PreToolUse' else 'post'}.json")
-            request_ok = reader or evidence_public_request(tool_input)
             record = {"call": call, "phase": phase, "status": "attempted" if request_ok else "incomplete",
                       "request_sha256": digest(tool_input)}
             if not reader and request_ok:
@@ -1469,12 +1592,17 @@ def evidence_hook() -> dict:
                     receipt_id = returned["receipt_id"]
                     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
                         raise ResearchError("Invalid reader receipt")
-                    bundle = evidence_read(safe_path(directory, f"readback-{receipt_id}.json"))
+                    bundle = evidence_read(safe_path(directory, f"{reader}-{receipt_id}.json"))
                     if (returned != {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
                             or digest(bundle) != receipt_id or bundle["generation"] != activation["id"]
                             or bundle["session_id"] != session_id):
                         raise ResearchError("Reader response differs from saved evidence")
-                    record.update(status="native_response_matched", receipt_id=receipt_id, generation=activation["id"])
+                    if reader == "sources" and bundle["capture"] is not None:
+                        _, captures = evidence_captures(project, directory, activation)
+                        if bundle["capture"] not in captures:
+                            raise ResearchError("Source capture differs from saved receipts")
+                    record.update(status="source_response_matched" if reader == "sources" else "native_response_matched",
+                                  receipt_id=receipt_id, generation=activation["id"])
                 else:
                     text = evidence_text(response) if request_ok and matched_pre else None
                     record["status"] = "captured_text" if text is not None else "incomplete"
@@ -1486,7 +1614,13 @@ def evidence_hook() -> dict:
                 raise ResearchError("Conflicting native response")
             evidence_write(path, record, immutable=True)
             if reader and phase == "PostToolUse":
-                evidence_write(safe_path(directory, f"matched-{record['receipt_id']}.json"), record, immutable=True)
+                if reader == "readback":
+                    evidence_write(safe_path(directory, f"matched-{record['receipt_id']}.json"), record, immutable=True)
+                elif bundle["capture"] is not None:
+                    match_path = safe_path(directory, f"source-matched-{bundle['capture']['id']}.json")
+                    # One native match suffices; retain its original attribution on later reads.
+                    if not match_path.exists():
+                        evidence_write(match_path, record, immutable=True)
             if record["status"] == "incomplete":
                 raise ResearchError("Unsupported or filtered capture")
         return {}
@@ -1523,13 +1657,14 @@ def main() -> int:
             command.add_argument("--current-range", help="Optional zero-based, end-exclusive START:END byte range")
     evidence = sub.add_parser("evidence", help="Explicit native-session evidence without requiring Git")
     actions = evidence.add_subparsers(dest="operation", required=True)
-    for name in ("activate", "readback", "check", "close", "hook"):
+    for name in ("activate", "readback", "sources", "check", "close", "hook"):
         action = actions.add_parser(name)
         if name != "hook":
             action.add_argument("--project", required=True, help="Explicit authorized filesystem root")
         if name == "activate":
             action.add_argument("--artifact", action="append", required=True)
             action.add_argument("--public-web", action="store_true")
+            action.add_argument("--record", help="Working UTF-8 record selected from --artifact; required with --public-web")
             action.add_argument("--experiment", action="store_true")
         if name == "close":
             action.add_argument("--incomplete", action="store_true")
@@ -1567,7 +1702,10 @@ def main() -> int:
             return 1
         return 0
     except (ResearchError, OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
-        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        error = {"error": str(exc)}
+        if isinstance(exc, ResearchError) and hasattr(exc, "evidence_status"):
+            error["evidence"] = exc.evidence_status
+        print(json.dumps(error), file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print(json.dumps({"error": "Interrupted; inspect recorded state before any further action"}), file=sys.stderr)
