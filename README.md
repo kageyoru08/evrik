@@ -47,7 +47,7 @@ Check that the response has no errors, then start a new Codex task and select **
 | Native evidence hooks | Explicit session capture on supported public web calls and exact saved-reader response matching |
 | Small regression example | A complete local baseline/candidate exercise with an isolated Git project |
 
-The skill uses available native tools. No specific model, connector, external consultation, or other skill is required. Delegation is optional; a subagent does not automatically receive a Git worktree.
+The skill uses available native tools without requiring a connector, external consultation, or another skill. Multi-agent delegation and peer meetings use the latest Sol or Astra family versions for every participant, including coordinators and facilitators. Verify the current versions and native availability, then select the model and supported effort according to the work; do not silently fall back to an older version. Delegation is optional; a subagent does not automatically receive a Git worktree. Within the authorized scope and existing native permissions, proceed without repeated user confirmation.
 
 For a requested collective decision, the [peer-meeting guidance](plugins/research-lab/skills/research/references/parallelism.md) gives participants their own initial positions, reciprocal critique and explicit review of the same saved decision. The facilitator manages the record and routing with equal substantive standing. Direct native messages are preferred; a necessary relay preserves complete attributed content and is labeled. Unresolved material objections or missing acceptance leave a provisional or blocked result. These instructions add no scheduler or service, and consensus does not prove correctness or complete defect discovery.
 

@@ -12,9 +12,18 @@ claiming that a meeting occurred.
 Settle the question, hard constraints, available evidence and access, actual
 participants and addresses, file ownership, decision rule, and finite limits
 before exchanging conclusions. Choose the smallest useful roster and budget
-for the question; no particular model, connector or external consultation is
-required. Bound participants, activations, messages, tools, evaluations and time
-as applicable. Reserve capacity for final review and one revision.
+for the question. Apply the [multiagent model rule](../SKILL.md#tools-ownership-and-authorization)
+to every meeting participant, including the facilitator. No particular connector,
+external consultation or Pro skill is required.
+Bound participants, activations, messages, tools, evaluations and time as
+applicable. Reserve capacity for final review and one revision.
+
+Start independent work when its inputs and native capacity are ready. Check
+shared writes, tools and evaluation budgets as well as data dependencies. Review
+a ready contribution without waiting for unrelated work; wait for the full set
+only where the decision needs it. Use ordinary code for exact counting and
+deduplication, retaining failed or missing contributions. Final joint adoption
+still requires the complete roster's review of the same decision.
 
 The facilitator is an equal substantive participant and the administrative
 record keeper. It saves its own initial judgment and accepts criticism. It

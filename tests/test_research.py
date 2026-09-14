@@ -1464,6 +1464,46 @@ class EvidenceTests(unittest.TestCase):
                                        "fixed_pages": fixed_count, "actual_pages": len(frames), "max_frame_bytes": max(wire_sizes)}
         self.assertTrue(self.invoke("close")["ready_to_close"])
 
+    def test_reader_post_reuses_frames_without_skipping_receipt_or_freshness_reads(self):
+        import importlib.util
+        import io
+        from unittest import mock
+
+        text = 'Bounded "quoted" evidence, slash \\ and Unicode café 😀.\n' * 900
+        self.report.write_bytes(text.encode("utf-8"))
+        activation = self.activate()
+        spec = importlib.util.spec_from_file_location("reader_reuse_test", RUNNER)
+        reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reader)
+        literal, frames, counts = activation["readback_command"], [], []
+        while literal:
+            call = "reuse-page-" + str(len(frames))
+            frame, output = self.native_page(literal, call, match=False)
+            event = {"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                     "tool_use_id": call, "session_id": self.session, "cwd": str(self.project),
+                     "tool_input": {"command": literal}, "tool_response": output}
+            stdin = io.TextIOWrapper(io.BytesIO(json.dumps(event).encode("utf-8")), encoding="utf-8")
+            with stdin, mock.patch.object(reader.sys, "stdin", stdin), \
+                    mock.patch.object(reader.os, "getcwd", return_value=str(self.project)), \
+                    mock.patch.object(reader, "evidence_reader_pages", wraps=reader.evidence_reader_pages) as pages, \
+                    mock.patch.object(reader, "evidence_reader_bundle", wraps=reader.evidence_reader_bundle) as bundles, \
+                    mock.patch.object(reader, "evidence_reader_current", wraps=reader.evidence_reader_current) as current:
+                self.assertEqual(reader.evidence_hook(), {})
+            counts.append(pages.call_count)
+            expected_reads = 1 if not frames else 2
+            self.assertEqual(bundles.call_count, expected_reads)
+            self.assertEqual(current.call_count, expected_reads)
+            frames.append(frame)
+            literal = frame["next_command"]
+        self.assertGreater(len(frames), 1)
+        bundle = json.loads("".join(frame["page"]["text"] for frame in frames))
+        self.assertEqual(bundle["snapshot"]["artifacts"][0]["text"], text)
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        self.reader_reuse_metrics = {"scenario": "quoted_unicode_readback", "pages": len(frames),
+                                     "post_frame_builds": counts,
+                                     "canonical_bytes": frames[0]["page"]["total_bytes"]}
+        self.assertEqual(counts, [1] * len(frames))
+
     def test_reader_packing_reserves_long_metadata_and_rejects_smaller_than_slice_floor(self):
         heavy = ('\\"\r\n\t e\u0301 漢字 😀 ' * 1500)
         self.report.write_bytes(heavy.encode("utf-8"))

@@ -1224,8 +1224,9 @@ def evidence_reader_pages(activation: dict, reader: str, receipt_id: str, bundle
 
 
 def evidence_page_matches(directory: Path, activation: dict, reader: str, receipt_id: str,
-                          bundle: dict) -> tuple[list, list]:
-    frames = evidence_reader_pages(activation, reader, receipt_id, bundle)
+                          bundle: dict, *, frames: list[dict] | None = None) -> tuple[list, list]:
+    if frames is None:
+        frames = evidence_reader_pages(activation, reader, receipt_id, bundle)
     matches = []
     for index, frame in enumerate(frames):
         path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
@@ -1754,13 +1755,15 @@ def evidence_hook() -> dict:
                             + sources["issue"] + " After this local repair, the original web operation may proceed."}
             if activation["handler_sha256"] != file_digest(Path(__file__)):
                 raise ResearchError("Handler identity changed")
+            frames = None
             if reader and reader_request[1] is not None:
                 failure_stage = "reader_saved_bundle"
                 requested_bundle = evidence_reader_bundle(directory, activation, reader, reader_request[1])
                 failure_stage = "reader_current_evidence"
                 evidence_reader_current(project, storage, directory, activation, reader, reader_request[1], requested_bundle)
                 failure_stage = "reader_response_match"
-                if reader_request[2] >= len(evidence_reader_pages(activation, reader, reader_request[1], requested_bundle)):
+                frames = evidence_reader_pages(activation, reader, reader_request[1], requested_bundle)
+                if reader_request[2] >= len(frames):
                     raise ResearchError("Reader page is outside the saved bundle")
                 failure_stage = "attempt_binding"
             tool_id = event.get("tool_use_id")
@@ -1797,7 +1800,9 @@ def evidence_hook() -> dict:
                     failure_stage = "reader_saved_bundle"
                     bundle = evidence_reader_bundle(directory, activation, reader, receipt_id)
                     failure_stage = "reader_response_match"
-                    frames = evidence_reader_pages(activation, reader, receipt_id, bundle)
+                    # Reuse only this invocation's frames after the independent bundle read.
+                    if frames is None or reader_request[1] != receipt_id or requested_bundle != bundle:
+                        frames = evidence_reader_pages(activation, reader, receipt_id, bundle)
                     index = returned["page"]["index"]
                     if (type(index) is not int or not 0 <= index < len(frames)
                             or (reader_request[1] is not None and reader_request[1] != receipt_id)
@@ -1823,7 +1828,7 @@ def evidence_hook() -> dict:
                 page_path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
                 if not page_path.exists():
                     evidence_write(page_path, record, immutable=True)
-                frames, matches = evidence_page_matches(directory, activation, reader, receipt_id, bundle)
+                frames, matches = evidence_page_matches(directory, activation, reader, receipt_id, bundle, frames=frames)
                 if len(matches) == len(frames):
                     match_path = (safe_path(directory, f"matched-{receipt_id}.json") if reader == "readback" else
                                   safe_path(directory, f"source-matched-{bundle['capture']['id']}.json")

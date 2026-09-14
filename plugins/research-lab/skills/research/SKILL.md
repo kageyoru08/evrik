@@ -30,8 +30,9 @@ only a necessary record within the authorized area, preserve historical
 entries, and carry its current state forward instead of reconstructing it
 from conversation at the end.
 
-Read [references/evidence.md](references/evidence.md) for the native evidence
-commands. For supported research sessions, explicitly activate the declared
+Read [references/evidence.md](references/evidence.md) for native capture, readback
+and closure. Reuse already-read guidance while its content and applicability
+remain unchanged. For supported research sessions, activate the declared
 saved deliverables before source operations or experimental edits/launches;
 experiment activation follows the inherited-material entry below. Include
 the working checkpoint among the deliverables. For authorized public source
@@ -42,8 +43,11 @@ If the supported session, interpreter or hook route is unavailable, retain
 that limitation and use the reference's explicit fallback within scope.
 
 Follow the applicable work path, then Write, Review saved content, and Answer.
-Continue ordinary authorized work without waiting for a coordinator to advance
-these stages. Actual permission requests remain subject to their approval path.
+Advance these stages automatically within the standing scope and budget, without
+waiting for a coordinator or repeatedly requesting user confirmation. Resolve
+routine choices; request user input only for a missing fact or decision with
+material consequences for scope, cost, authorization or irreversible effects.
+Actual host/native approval requirements remain authoritative.
 
 ## Experiment path
 
@@ -124,17 +128,11 @@ When live discovery is requested, perform a relevant search. Supplied links
 are leads; opening them alone is not discovery.
 
 Capture each completed search or batch before further discovery or synthesis.
-For an activated supported native web route, the plugin hook records the
-actual request and response. Run the exact `evidence sources` invocation
-returned by activation and expose its complete output. Inspect the returned
-saved source, retain its generated receipt references in the declared working
-record, and add brief coverage and selection notes. Complete any remaining
-pending source reads before further discovery; do not copy raw fields again.
-The next supported web operation and ordinary close require the matched
-source-reader response and retained references. These checks establish neither
-source relevance nor meaningful assessment. A missing receipt,
-unsupported body or capture error is incomplete evidence, not successful
-automatic capture. Do not repeat retrieval to conceal a recording failure.
+For an activated supported native web route, follow the source-reader and record
+requirements in [references/evidence.md](references/evidence.md). Inspect the saved
+sources, retain generated receipt references with coverage and selection notes,
+and finish pending reads before further discovery. A missing receipt, unsupported
+body or capture error is incomplete evidence; do not repeat retrieval to hide it.
 
 Otherwise immediately record the exact queries, actual search date, returned
 source identifiers, and coverage/selection notes through native file tools.
@@ -177,9 +175,6 @@ deliverables. Preserve raw tool labels as raw evidence, not verified locators.
 
 ## Write from the working record
 
-Before drawing conclusions or writing the report, read
-[references/evidence.md](references/evidence.md).
-
 Apply the scientific acceptance criteria to valid evidence, not merely a
 runner outcome. Report the question, methods and comparison conditions,
 decisive evidence, result, and practical limits. Distinguish observations,
@@ -201,16 +196,10 @@ Save the requested deliverables. Saving them is not completion.
 After saving, read the relevant contents of the actual saved deliverables
 and compare them with the retained evidence.
 
-For an activated session, run the exact `evidence readback` invocation
-returned by activation, expose each complete page, and follow the returned
-literal `next_command` until the whole receipt is covered. Each page is a
-separate native call within the existing budget; a larger output request
-cannot override a platform cap. The pages contain all declared saved text
-and the attached obligation/run view. Review those actual contents in
-context; a helper's emission or native response match does not establish
-understanding. Use `evidence check` for pending-page commands. Incomplete or
-truncated pages cannot support closure; never substitute hashes or invoke
-hooks manually.
+For an activated session, follow the literal, separate-page readback procedure
+and freshness checks in [references/evidence.md](references/evidence.md). Review
+the actual saved contents and attached obligation/run state in context; matched
+delivery does not establish understanding. Use `evidence check` for pending work.
 
 For literature, cover all source/access statements and citation locators.
 For experiments, read the current checkpoint, including inherited-action
@@ -247,9 +236,24 @@ Stop according to the agreed question, budget, and acceptance criteria.
 
 ## Tools, ownership, and authorization
 
-Use tools actually available in Codex; require no particular connector, model,
-or other skill. Change effort or delegation settings only through available
-controls and claim changes only when confirmed.
+Use tools actually available in Codex; require no particular connector or other
+skill. Solo work has no model-family restriction. In any multiagent delegation
+or meeting, every participant, including coordinators, facilitators, workers and
+critics, must use the latest version of Sol or Astra, verified against the current
+native model inventory and current official model information where needed.
+Do not rely on remembered versions or label sorting. Select an eligible available
+model and effort through supported native controls according to task risk,
+capability needs and cost; mixed families are not required. If a family's latest
+version cannot be established or is unavailable, use the other family only if its
+latest is verified and available; never silently fall back to an older version.
+A successful supported native model-selection call and returned participant
+identity establish the configured choice, not backend model attestation. A role
+prompt or assumed default alone does not establish an eligible selection.
+An ineligible initiator may use a supported native route to an eligible coordinator
+only if it then ceases participating in that multiagent operation. Do not disguise
+participation as solo work. If no eligible native selection is available, retain
+that limitation and continue useful authorized solo work without claiming
+compliant multiagent participation.
 
 Use the smallest search, inspection, or test that resolves the current
 uncertainty. Reuse verified evidence while its inputs remain valid; broaden or
@@ -258,9 +262,10 @@ Keep full records in files and return relevant evidence without repeatedly
 loading or copying raw outputs into context.
 
 Delegate bounded independent questions when useful, specifying evidence,
-output, and file ownership. Explicitly assign isolated directories when
-concurrent edits require them; subagents do not automatically get worktrees.
-Review and integrate their evidence. File isolation does not grant permissions.
+output, and file ownership. Keep task boundaries and routing independent of
+model/version. Explicitly assign isolated directories when concurrent edits
+require them; subagents do not automatically get worktrees. Review and integrate
+their evidence. File isolation does not grant permissions.
 
 Keep existing host protections and approval boundaries authoritative. Do not
 reconfigure host/Git security or evade host checks or native refusals by changing
