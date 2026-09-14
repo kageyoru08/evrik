@@ -600,7 +600,7 @@ class InputBoundaryTests(unittest.TestCase):
                     [powershell, "-NoProfile", "-NonInteractive", "-Command",
                      "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction -Path $env:RESEARCH_TEST_LINK -Target $env:RESEARCH_TEST_TARGET | Out-Null"],
                     env=dict(os.environ, RESEARCH_TEST_LINK=str(storage), RESEARCH_TEST_TARGET=str(held)),
-                    capture_output=True, text=True, encoding="utf-8", timeout=20,
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
                 )
                 self.assertEqual(proc.returncode, 0, proc.stderr)
             else:
