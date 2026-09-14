@@ -4,6 +4,23 @@ Use available search and reading tools. Keep the search proportional to the ques
 
 ## Capture native discovery and reading responses
 
+Use the evidence reference's explicit `--public-web` activation for the
+supported native `webrun` search/open/find route. The synchronous hooks retain
+attempts and supported returned strings or strict `text`/`input_text` blocks
+before the post hook returns. Inspect the actual receipt and source IDs,
+then link it from the working record with coverage and selection notes.
+No per-call JavaScript capture wrapper is needed on this activated route.
+
+The filter rejects unsupported, oversized or private/opaque representations;
+unknown routes are not silently relabeled as captured. A post-hook block
+following a capture failure is distinct from a web failure. Preserve its
+actual outcome and any surviving response; do not automatically retry the
+retrieval. Missing post evidence remains incomplete. Hook registration alone
+does not establish successful execution, before-model delivery, access to a
+full page, or understanding of its contents.
+
+### Fallback when activated capture is unavailable
+
 When native code composition is exposed, save the actual search or bounded
 source-reading request, completion date, and returned response before exposing
 the response for synthesis. Resolve the host's real tool names, result
@@ -61,8 +78,8 @@ actual emission and observation also establish it. A receipt containing an
 error records that failure, not successful reading.
 
 The receipt proves what was recorded, not successful discovery, comprehension,
-coverage or citation accuracy. Calls outside the composition remain outside
-its guarantee. When composition is unavailable, use immediate native
+coverage or citation accuracy. Calls outside the fallback composition remain
+outside its guarantee. When composition is unavailable, use immediate native
 write/read capture and do
 not describe manual transcription as automatic capture.
 

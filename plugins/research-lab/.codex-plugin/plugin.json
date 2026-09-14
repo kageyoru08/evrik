@@ -9,6 +9,7 @@
   "repository": "https://github.com/kageyoru08/research-lab",
   "license": "MIT",
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Research Lab",
     "shortDescription": "Research with traceable experiments and evidence.",

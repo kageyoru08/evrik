@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -X utf8 -B \"${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py\" evidence hook",
+            "commandWindows": "python -X utf8 -B \"${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py\" evidence hook",
+            "async": false,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -X utf8 -B \"${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py\" evidence hook",
+            "commandWindows": "python -X utf8 -B \"${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py\" evidence hook",
+            "async": false,
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

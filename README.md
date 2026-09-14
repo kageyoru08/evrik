@@ -1,19 +1,19 @@
 # Research Lab
 
-A native Codex plugin for literature research and traceable local experiments. One skill guides the investigation; a small Python runner records committed source, declared inputs, execution logs, metrics, and comparisons. Codex provides the conversation, tools, optional subagents, and artifact viewing.
+A native Codex plugin for literature research and traceable local experiments. One skill guides the investigation; a Python runner records committed experiments and saved evidence. Opt-in native hooks capture supported public web responses and check a declared saved-content readback. Codex provides the conversation, tools, optional subagents, and artifact viewing.
 
 Research Lab is an original implementation inspired by the experiment and evidence workflow of [OpenResearch](https://github.com/alphaXiv/OpenResearch). It has no OpenResearch runtime dependency and does not include its source code.
 
 ## Install in Codex
 
-Use a Codex version with the native plugin marketplace commands, plus Git and Python 3.11 or newer for experiments. No additional Python packages are required. The commands below use the public repository:
+Use a Codex version with the native plugin marketplace and hook interfaces, plus Python 3.11 or newer (`python3` on POSIX, `python` on Windows). Git is needed for experiments, while literature evidence storage works without it. No additional Python packages are required. The commands below use the public repository:
 
 ```sh
 codex plugin marketplace add kageyoru08/research-lab
 codex plugin add research-lab@research-lab
 ```
 
-Start a new Codex task after installation and invoke `$research` or select **Research Lab** in the skill picker. The skill can also be selected automatically for matching research requests. The skill and runner do not edit global Codex configuration or install a model provider.
+Start a new Codex task after installation and review Research Lab's two hook definitions in `/hooks` before trusting them. Installation alone does not trust new or changed hooks. Invoke `$research` or select **Research Lab** in the skill picker; matching research requests may select it naturally. The skill and runner do not edit global Codex configuration or install a model provider; Codex's own trust interface persists the choices you make there.
 
 Example requests:
 
@@ -42,9 +42,27 @@ Check that the response has no errors, then start a new Codex task and select **
 | `research` skill | Research questions, source assessment, protocols, decisions, and reports |
 | Conditional references | Literature, local experiments, and evidence guidance loaded only when needed |
 | Python runner | Source archives, input identities, durable records, one launch per run ID, validation, and numerical comparison |
+| Native evidence hooks | Explicit session capture on supported public web calls and exact saved-reader response matching |
 | Small regression example | A complete local baseline/candidate exercise with an isolated Git project |
 
 The skill uses available native tools. No specific model, connector, external consultation, or other skill is required. Delegation is optional; a subagent does not automatically receive a Git worktree.
+
+For supported native root sessions, declare the report/checkpoint paths with
+`evidence activate`, use `--public-web` for authorized public source capture,
+and add `--experiment` to attach real reconciled run state. `evidence readback`
+returns the declared saved text; `check` detects relevant changes and `close`
+requires fresh evidence before disabling capture. Use the exact reader
+invocation returned by activation. These commands need an existing directory,
+not a Git repository or a fake protocol for literature.
+
+Records distinguish helper emission from a matched native response. Neither
+proves comprehension, narrative completeness, full-page access or scientific
+acceptance. Unsupported routes, disabled/untrusted hooks, worker inheritance
+and omitted activation are outside automatic capture; inactive sessions do
+not retain bodies. Registered hooks may still receive matching-event input
+before filtering. There is no automatic Stop enforcement. The skill retains
+manual capture/readback fallbacks and an explicit incomplete close when a
+required native check is unavailable.
 
 ## Try the local example
 

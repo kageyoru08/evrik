@@ -901,5 +901,195 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(report["candidate"]["evidence"]["status"], "valid")
 
 
+class EvidenceTests(unittest.TestCase):
+    """Real CLI operations with explicitly synthetic native hook envelopes."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="research evidence ")
+        self.addCleanup(self.temporary.cleanup)
+        self.project = Path(self.temporary.name) / "project café's files"
+        self.project.mkdir()
+        self.session = "11111111-1111-4111-8111-111111111111"
+        self.env = dict(os.environ, CODEX_THREAD_ID=self.session, CODEX_SESSION_ID=self.session,
+                        PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1")
+        self.report = self.project / "report.md"
+        self.report.write_text("Source/access table: public source; locator retained.\n", encoding="utf-8")
+
+    def invoke(self, operation, *args, expected=0, env=None):
+        result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "evidence", operation,
+                                 "--project", str(self.project), *args], cwd=self.project, env=env or self.env,
+                                capture_output=True, text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(result.returncode, expected, result.stderr or result.stdout)
+        return json.loads(result.stderr if expected == 2 else result.stdout)
+
+    def activate(self, *args):
+        return self.invoke("activate", "--artifact", "report.md", *args)
+
+    def hook(self, phase, call, request, response=None, name="webrun", **overrides):
+        event = {"hook_event_name": phase, "tool_name": name, "tool_use_id": call,
+                 "session_id": self.session, "cwd": str(self.project), "tool_input": request,
+                 "transcript_path": "/private/never-open-this-session.jsonl"}
+        if phase == "PostToolUse":
+            event["tool_response"] = response
+        event.update(overrides)
+        result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "evidence", "hook"],
+                                input=json.dumps(event), cwd=self.project, env=self.env,
+                                capture_output=True, text=True, encoding="utf-8", timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        return json.loads(result.stdout) if result.stdout else {}
+
+    def directory(self):
+        return self.project / ".research/evidence" / self.session
+
+    def inventory(self):
+        directory = self.directory()
+        return {path.name: path.read_bytes() for path in directory.iterdir()} if directory.exists() else {}
+
+    def native_readback(self, activation, call):
+        request = {"command": activation["readback_command"]}
+        self.assertEqual(self.hook("PreToolUse", call, request, name="Bash"), {})
+        shell = (["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", activation["readback_command"]]
+                 if os.name == "nt" else ["sh", "-c", activation["readback_command"]])
+        result = subprocess.run(shell, cwd=self.project, env=self.env, capture_output=True,
+                                text=True, encoding="utf-8", timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(value["status"], "emitted")
+        self.assertEqual(self.hook("PostToolUse", call, request, result.stdout, name="Bash"), {})
+        return value
+
+    def test_inactive_and_root_only_activation_do_not_create_unrelated_state(self):
+        request = {"search_query": [{"q": "public evidence"}], "response_length": "short"}
+        self.assertEqual(self.invoke("check")["status"], "not_activated")
+        self.assertEqual(self.hook("PostToolUse", "inactive", request, "public result"), {})
+        self.assertFalse((self.project / ".research").exists())
+        bad_env = dict(self.env, CODEX_THREAD_ID="22222222-2222-4222-8222-222222222222")
+        self.invoke("activate", "--artifact", "report.md", expected=2, env=bad_env)
+        self.invoke("activate", "--artifact", "report.md", expected=2,
+                    env=dict(self.env, CODEX_SESSION_ID=""))
+        for path in ("../outside.txt", ".git/config", ".codex/config.toml", ".research/evidence/receipt.json"):
+            self.invoke("activate", "--artifact", path, expected=2)
+        self.assertFalse((self.project / ".research").exists())
+        self.invoke("activate", "--artifact", "report.md", "--experiment", expected=2)
+        self.assertFalse((self.project / ".git").exists())
+        activation = self.activate("--public-web")
+        original = self.inventory()
+        for extra in ({"agent_id": None}, {"agent_type": "worker"}, {"cwd": str(self.project.parent)},
+                      {"session_id": "22222222-2222-4222-8222-222222222222"}):
+            self.assertEqual(self.hook("PreToolUse", "wrong-owner", request, **extra), {})
+        self.assertEqual(self.inventory(), original)
+        self.assertEqual(self.activate("--public-web")["generation"], activation["generation"])
+        self.invoke("activate", "--artifact", "different.md", expected=2)
+        self.assertFalse((self.project / ".research/protocol.json").exists())
+
+    def test_saved_readback_requires_native_match_and_becomes_stale_after_correction(self):
+        activation = self.activate()
+        emitted = self.invoke("readback")
+        self.assertIn("Source/access table", emitted["readback"]["snapshot"]["artifacts"][0]["text"])
+        status = self.invoke("check")
+        self.assertTrue(status["fresh"])
+        self.assertFalse(status["native_response_matched"])
+        self.invoke("close", expected=2)
+        request = {"command": activation["readback_command"]}
+        self.hook("PreToolUse", "wrong-response-shape", request, name="Bash")
+        self.assertEqual(self.hook("PostToolUse", "wrong-response-shape", request,
+                                   {"stdout": json.dumps(emitted)}, name="Bash")["decision"], "block")
+        self.assertFalse(self.invoke("check")["native_response_matched"])
+        wrong_request = {"command": activation["readback_command"] + "\n"}
+        self.assertEqual(self.hook("PostToolUse", "unmatched", wrong_request, json.dumps(emitted), name="Bash"), {})
+        matched = self.native_readback(activation, "reader-one")
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        old_receipt = (self.directory() / ("readback-" + matched["receipt_id"] + ".json")).read_bytes()
+        self.report.write_text("Source/access table: corrected locator and actual four-attempt budget.\n", encoding="utf-8")
+        self.assertEqual(self.invoke("check")["status"], "stale")
+        self.invoke("close", expected=2)
+        corrected = self.native_readback(activation, "reader-two")
+        self.assertIn("corrected locator", corrected["readback"]["snapshot"]["artifacts"][0]["text"])
+        self.assertEqual((self.directory() / ("readback-" + matched["receipt_id"] + ".json")).read_bytes(), old_receipt)
+        final_bytes = self.report.read_bytes()
+        self.report.unlink()
+        self.assertEqual(self.invoke("check")["status"], "incomplete")
+        self.invoke("close", expected=2)
+        self.report.write_bytes(final_bytes)
+        closed = self.invoke("close")
+        self.assertEqual(closed["status"], "closed")
+        self.assertFalse(closed["semantic_review_verified"])
+        original = self.inventory()
+        self.assertEqual(self.hook("PreToolUse", "after-close", {"find": [{"ref_id": "https://example.com/", "pattern": "text"}]}), {})
+        self.assertEqual(self.inventory(), original)
+        self.assertEqual(self.invoke("check")["status"], "closed")
+        self.assertNotEqual(self.activate()["generation"], activation["generation"])
+
+    def test_public_capture_preserves_all_three_operations_and_native_reader(self):
+        activation = self.activate("--public-web")
+        requests = [{"search_query": [{"q": "public evidence", "domains": ["docs.python.org"]}], "response_length": "short"},
+                    {"open": [{"ref_id": "https://docs.python.org/3/library/hashlib.html", "lineno": 4}]},
+                    {"find": [{"ref_id": "turn1view0", "pattern": "sha256"}]}]
+        for index, request in enumerate(requests):
+            call = "web-" + str(index)
+            response = [{"type": "input_text" if index % 2 == 0 else "text", "text": f"Public source turn{index}view0: checked passage."}]
+            self.assertEqual(self.hook("PreToolUse", call, request), {})
+            self.assertEqual(self.hook("PostToolUse", call, request, response), {})
+            original = self.inventory()
+            self.assertEqual(self.hook("PostToolUse", call, request, response), {})
+            self.assertEqual(self.inventory(), original)
+        readback = self.native_readback(activation, "reader")
+        self.assertEqual(len(readback["readback"]["snapshot"]["web"]["receipts"]), 6)
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        self.assertFalse((self.project / ".research/protocol.json").exists())
+        self.assertFalse((self.project / ".git").exists())
+
+    def test_private_unsupported_missing_attempt_and_conflicts_remain_incomplete(self):
+        activation = self.activate("--public-web")
+        request = {"find": [{"ref_id": "https://example.com/", "pattern": "public"}]}
+        self.assertEqual(self.hook("PreToolUse", "original", request), {})
+        self.assertEqual(self.hook("PostToolUse", "original", request, "original public result"), {})
+        original = {name: raw for name, raw in self.inventory().items() if name.endswith("-post.json")}
+        self.assertEqual(self.hook("PostToolUse", "original", request, "conflicting public result")["decision"], "block")
+        for name, raw in original.items():
+            self.assertEqual((self.directory() / name).read_bytes(), raw)
+        secret = "NEVER_RETAIN_PRIVATE_BODY_12345"
+        for call, response in (("private", [{"type": "input_text", "text": json.dumps({"encrypted_content": secret})}]),
+                               ("extra-key", [{"type": "input_text", "text": secret, "extra": True}])):
+            self.hook("PreToolUse", call, request)
+            self.assertEqual(self.hook("PostToolUse", call, request, response)["decision"], "block")
+        self.assertEqual(self.hook("PostToolUse", "missing-pre", request, "public result")["decision"], "block")
+        all_receipts = b"\n".join(self.inventory().values())
+        self.assertNotIn(secret.encode(), all_receipts)
+        self.assertNotIn(b"never-open-this-session", all_receipts)
+        self.assertNotIn(b"conflicting public result", all_receipts)
+        self.native_readback(activation, "reader")
+        self.assertFalse(self.invoke("check")["web"]["complete"])
+        self.invoke("close", expected=2)
+        self.invoke("close", "--incomplete", expected=2)
+        closed = self.invoke("close", "--incomplete", "--reason", "Capture remains incomplete; no retrieval retry.")
+        self.assertTrue(closed["incomplete"])
+
+    def test_experiment_readback_retains_obligations_and_dependency_changes(self):
+        self.project = make_project(Path(self.temporary.name) / "experiment")
+        self.report = self.project / "report.md"
+        self.report.write_text("A bounded report with a historical obligation.\n", encoding="utf-8")
+        note = self.project / ".research/history.md"
+        note.write_text("An inherited calibration decision remains to be assessed.\n", encoding="utf-8")
+        selected = command(self.project, "reconcile", "--note", ".research/history.md")
+        activation = self.activate("--experiment")
+        emitted = self.native_readback(activation, "pending-reader")
+        deps = emitted["readback"]["snapshot"]["dependencies"]
+        self.assertEqual(deps["coverage"][0]["text"].encode("utf-8"), note.read_bytes())
+        self.assertFalse(deps["ready"])
+        self.invoke("close", expected=2)
+        command(self.project, "reconcile", "--unit", selected["coverage"][0]["id"], "--disposition", "context",
+                "--rationale", "Retain the historical decision as context for this test.")
+        self.assertFalse(self.invoke("check")["fresh"])
+        self.native_readback(activation, "resolved-reader")
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        note.write_text("The inherited note changed after its readback.\n", encoding="utf-8")
+        changed = self.invoke("check")
+        self.assertFalse(changed["fresh"])
+        self.assertFalse(changed["dependencies_ready"])
+        self.assertFalse((self.project / ".research/launches.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

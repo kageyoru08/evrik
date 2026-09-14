@@ -66,6 +66,16 @@ notes can be selected later without erasing that earlier assertion. Selected
 sources, pending units and comparisons cannot be cleared by declaring absence.
 Plain `reconcile` inspects state without creating a decision.
 
+After establishing entry, activate the declared final report and checkpoint
+with `evidence activate --project PATH --artifact REPORT --artifact CHECKPOINT
+--experiment` for a supported native root session. This attaches the existing
+reconciliation and runner state to saved-content review; it does not replace
+the entry checks or perform the inherited comparisons. Readback returns all
+registered obligations and current run/claim evidence. Preserve their material
+state in the final checkpoint, including unresolved work, and close the
+evidence session after its final saved-content review. See the evidence
+reference for the exact reader, freshness checks and unavailable-route limits.
+
 Repeat `--unit` to apply one explicit disposition to adjacent units. Use
 `context` for background, `completed` for completed work supported by cited
 evidence in the rationale, `unresolved` or `unsupported` for remaining

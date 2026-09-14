@@ -27,13 +27,16 @@ import zipfile
 
 
 PLUGIN = "plugins/research-lab/"
-PLUGIN_FILES = {
+BASELINE_PLUGIN_FILES = {
     ".codex-plugin/plugin.json", "LICENSE", "skills/research/SKILL.md",
     "skills/research/agents/openai.yaml", "skills/research/scripts/research.py",
     "skills/research/references/literature.md",
     "skills/research/references/experiments.md",
     "skills/research/references/evidence.md",
 }
+PLUGIN_FILES = BASELINE_PLUGIN_FILES | {"hooks/hooks.json"}
+HOOK_COMMAND = 'python3 -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
+HOOK_COMMAND_WINDOWS = 'python -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 BASELINE = "37bf04427c14c204450cd56576852573cab360b7"
 CLI_VERSION = "codex-cli 0.153.4"
 MARKETPLACE = ".agents/plugins/marketplace.json"
@@ -85,14 +88,31 @@ def committed_files(repo, revision):
     return commit, files
 
 
-def payload(files):
+def payload(files, expected_files=PLUGIN_FILES):
     values = {name[len(PLUGIN):]: content for name, content in files.items() if name.startswith(PLUGIN)}
-    require(set(values) == PLUGIN_FILES, f"Unexpected plugin inventory: {sorted(set(values) ^ PLUGIN_FILES)}")
+    require(set(values) == expected_files, f"Unexpected plugin inventory: {sorted(set(values) ^ expected_files)}")
     return values
 
 
 def hashes(files):
     return {name: sha(content) for name, content in sorted(files.items())}
+
+
+def validate_hooks(content):
+    expected = {"hooks": {event: [{"matcher": "*", "hooks": [{
+        "type": "command", "command": HOOK_COMMAND,
+        "commandWindows": HOOK_COMMAND_WINDOWS, "async": False, "timeout": 5,
+    }]}] for event in ("PreToolUse", "PostToolUse")}}
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, f"Duplicate hook definition key: {key}")
+            result[key] = value
+        return result
+    # Serialized comparison also rejects bool/int and int/float substitutions.
+    actual = json.loads(content, object_pairs_hook=unique)
+    require(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True),
+            "Unexpected hook definition; only the reviewed synchronous Pre/Post commands are allowed")
 
 
 def audit_package(repo, revision, report, work):
@@ -115,7 +135,9 @@ def audit_package(repo, revision, report, work):
     require(manifest["name"] == marketplace["name"] == "research-lab", "Product name mismatch")
     require(manifest["version"] == "1.0.0", "Plugin version must remain exactly 1.0.0")
     require(manifest["skills"] == "./skills/" and manifest["license"] == "MIT", "Invalid plugin paths/license")
-    require(not (set(manifest) & {"hooks", "mcpServers", "apps", "commands"}), "Unexpected runtime integration")
+    require(not (set(manifest) & {"mcpServers", "apps", "commands"}), "Unexpected runtime integration")
+    require(manifest.get("hooks") == "./hooks/hooks.json", "Invalid native hook path")
+    validate_hooks(plugin["hooks/hooks.json"])
     require(manifest["interface"]["capabilities"] == [], "Unexpected declared capability")
     require(len(marketplace["plugins"]) == 1 and marketplace["plugins"][0]["name"] == "research-lab", "Expected one plugin")
     require(marketplace["plugins"][0]["source"] == {"source": "local", "path": "./plugins/research-lab"}, "Invalid marketplace source")
@@ -149,6 +171,7 @@ def audit_package(repo, revision, report, work):
         "archive_sha256": sha(archive_bytes), "git_blob_sha256": hashes(files),
         "plugin_git_blob_sha256": hashes(plugin), "relative_links": checked_links,
         "metadata_checks": "passed", "version": manifest["version"], "runner_imports": sorted(imports),
+        "hook_definition_sha256": sha(plugin["hooks/hooks.json"]),
     }
     return commit, files
 
@@ -175,7 +198,36 @@ def disk_hashes(directory):
             for path in sorted(directory.rglob("*")) if path.is_file()}
 
 
-def loader(cli, env, project, installed, work, label):
+def hook_inventory(response, project, installed, expect_hooks):
+    require(len(response["data"]) == 1, "Unexpected hook response scope")
+    entry = response["data"][0]
+    require(Path(entry["cwd"]).resolve() == project, "Hook listing cwd differs")
+    require(not entry["errors"], f"Hook loader errors: {entry['errors']}")
+    found = [hook for hook in entry["hooks"] if hook.get("pluginId") == "research-lab@research-lab"]
+    require(len(found) == (2 if expect_hooks else 0), "Unexpected research hook count")
+    if expect_hooks:
+        require({hook["eventName"] for hook in found} == {"preToolUse", "postToolUse"}, "Unexpected research hook events")
+        for hook in found:
+            require(hook["source"] == "plugin" and Path(hook["sourcePath"]).resolve() == installed / "hooks/hooks.json",
+                    "Loader used a different hook source")
+            require(hook["handlerType"] == "command" and hook["async"] is False and
+                    hook["matcher"] == "*" and hook["timeoutSec"] == 5 and hook["enabled"] is True,
+                    "Loaded hook behavior differs from the package")
+            require(hook["trustStatus"] == "untrusted" and hook["isManaged"] is False,
+                    "Discovery check must not grant hook trust")
+            require(re.fullmatch(r"sha256:[0-9a-f]{64}", hook["currentHash"]) is not None, "Missing hook definition identity")
+    other = [hook for hook in entry["hooks"] if hook.get("pluginId") != "research-lab@research-lab"]
+    canary = [hook for hook in other if hook.get("pluginId") == "distribution-canary@distribution-canary"]
+    require(len(canary) == 1 and canary[0]["enabled"] is True and canary[0]["trustStatus"] == "untrusted",
+            "Unrelated canary hook disappeared or acquired trust")
+    # New definitions may change UI order; all other unrelated metadata must stay identical.
+    preserved = sorted(({key: value for key, value in hook.items() if key != "displayOrder"}
+                        for hook in other), key=lambda hook: hook["key"])
+    return {"research": found, "other": preserved, "errors": entry["errors"], "warnings": entry["warnings"],
+            "scope": "discovery only; hook execution is not tested or qualified", "expected_research_hooks": 2 if expect_hooks else 0}
+
+
+def loader(cli, env, project, installed, work, label, *, research_installed=True, expect_hooks=True):
     """Fresh native task + forced skill reload, with no turn/start or model call."""
     events = []
     messages = queue.Queue()
@@ -228,13 +280,16 @@ def loader(cli, env, project, installed, work, label):
             entry = skills["data"][0]
             require(not entry["errors"], f"Skill loader errors: {entry['errors']}")
             found = [skill for skill in entry["skills"] if skill.get("pluginId") == "research-lab@research-lab"]
-            require(len(found) == 1 and found[0]["name"] == "research-lab:research" and found[0]["enabled"], "Installed research skill not enabled")
-            require(Path(found[0]["path"]).resolve() == installed / "skills/research/SKILL.md", "Loader used a different skill path")
+            require(len(found) == (1 if research_installed else 0), "Unexpected research skill count")
+            if research_installed:
+                require(found[0]["name"] == "research-lab:research" and found[0]["enabled"], "Installed research skill not enabled")
+                require(Path(found[0]["path"]).resolve() == installed / "skills/research/SKILL.md", "Loader used a different skill path")
             require(any(skill.get("pluginId") == "distribution-canary@distribution-canary" and skill["enabled"]
                         for skill in entry["skills"]), "Canary skill disappeared")
-            request(4, "thread/unsubscribe", {"threadId": started["thread"]["id"]})
+            hooks = hook_inventory(request(4, "hooks/list", {"cwds": [str(project)]}), project, installed, expect_hooks)
+            request(5, "thread/unsubscribe", {"threadId": started["thread"]["id"]})
             return {"thread_id": started["thread"]["id"], "ephemeral": True,
-                    "skill": found[0], "loader_errors": entry["errors"], "model_turns": 0}
+                    "skill": found[0] if found else None, "loader_errors": entry["errors"], "hooks": hooks, "model_turns": 0}
         finally:
             (work / f"{label}-app-server.json").write_text(json.dumps(events, indent=2) + "\n", encoding="utf-8")
             process.stdin.close()
@@ -273,6 +328,13 @@ def native_checks(repo, commit, files, args, report, work):
     native = report["native"] = {"cli_version": version, "cli_binary": cli,
                                   "scope": "plugin management and loader only; no authenticated model execution",
                                   "isolated_codex_home": str(home), "commands": [], "states": {}}
+    python_command = "python" if os.name == "nt" else "python3"
+    python_args = [python_command, "-X", "utf8", "-B", "-c",
+                   "import json,sys; print(json.dumps({'version':list(sys.version_info[:3]),'executable':sys.executable}))"]
+    hook_python = json.loads(run(python_args, cwd=project, env=env, timeout=20).stdout)
+    require(tuple(hook_python["version"]) >= (3, 11), "Native hook command requires Python 3.11+")
+    native["hook_python"] = {"argv": python_args, **hook_python,
+                             "scope": "platform command availability only; native hook execution is not exercised"}
     def command(*parts, expected_success=True):
         result = run([cli, *parts, "--json"], cwd=project, env=env, check=False)
         stdout = result.stdout.decode("utf-8", "replace")
@@ -293,13 +355,19 @@ def native_checks(repo, commit, files, args, report, work):
     canary = work / "canary-marketplace"
     (canary / ".agents/plugins").mkdir(parents=True)
     (canary / "plugin/.codex-plugin").mkdir(parents=True)
+    (canary / "plugin/hooks").mkdir(parents=True)
     (canary / "plugin/skills/distribution-canary").mkdir(parents=True)
     (canary / ".agents/plugins/marketplace.json").write_text(json.dumps({
         "name": "distribution-canary", "plugins": [{"name": "distribution-canary",
         "source": {"source": "local", "path": "./plugin"},
         "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}}]}), encoding="utf-8")
     (canary / "plugin/.codex-plugin/plugin.json").write_text(json.dumps({
-        "name": "distribution-canary", "version": "1.0.0", "description": "Distribution test canary", "skills": "./skills/"}), encoding="utf-8")
+        "name": "distribution-canary", "version": "1.0.0", "description": "Distribution test canary",
+        "skills": "./skills/", "hooks": "./hooks/hooks.json"}), encoding="utf-8")
+    (canary / "plugin/hooks/hooks.json").write_text(json.dumps({"hooks": {"PreToolUse": [{
+        "matcher": "distribution_canary_never_called", "hooks": [{"type": "command",
+        "command": 'python3 -X utf8 -B -c "pass"', "commandWindows": 'python -X utf8 -B -c "pass"',
+        "async": False, "timeout": 5}]}]}}), encoding="utf-8")
     (canary / "plugin/skills/distribution-canary/SKILL.md").write_text(
         "---\nname: distribution-canary\ndescription: Test fixture for native plugin preservation.\n---\n\nRead-only test canary.\n", encoding="utf-8")
     command("plugin", "marketplace", "add", str(canary))
@@ -311,6 +379,15 @@ def native_checks(repo, commit, files, args, report, work):
     before_config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
     native["config_before"] = before_config
     installed = home / "plugins/cache/research-lab/research-lab/1.0.0"
+    native["before_loader"] = loader(cli, env, project, installed, work, "before-research",
+                                     research_installed=False, expect_hooks=False)
+    preserved_hooks = native["before_loader"]["hooks"]["other"]
+    def load_at(label, expected):
+        observed = loader(cli, env, project, installed, work, label, research_installed=bool(expected),
+                          expect_hooks="hooks/hooks.json" in expected)
+        require(observed["hooks"]["other"] == preserved_hooks, f"Unrelated hook metadata changed at {label}")
+        native.setdefault("hook_loaders", {})[label] = observed
+        return observed
     def state(label, expected, expected_revision=commit):
         observed = disk_hashes(installed)
         require(observed == hashes(expected), f"Installed payload mismatch at {label}: {observed}")
@@ -338,15 +415,15 @@ def native_checks(repo, commit, files, args, report, work):
         marketplace_root = Path(added["installedRoot"]).resolve()
         command("plugin", "add", "research-lab@research-lab")
         state("public-installed-B", payload(files))
-        native["loader"] = loader(cli, env, project, installed, work, "public-B")
+        native["loader"] = load_at("public-B", payload(files))
         state("public-loaded-B", payload(files))
         return
     baseline, old_files = committed_files(repo, args.baseline)
-    old = payload(old_files)
+    old = payload(old_files, BASELINE_PLUGIN_FILES)
     new = payload(files)
     require(json.loads(old[".codex-plugin/plugin.json"])["version"] == "1.0.0", "Baseline version differs")
     require(baseline != commit and hashes(old) != hashes(new), "A and B must be different real payloads")
-    changed = [name for name in sorted(new) if old[name] != new[name]]
+    changed = [name for name in sorted(set(old) | set(new)) if old.get(name) != new.get(name)]
     require("skills/research/scripts/research.py" in changed and
             any(name == "skills/research/SKILL.md" or "/references/" in name for name in changed),
             "Choose an actual baseline with both source and guidance differences")
@@ -357,15 +434,18 @@ def native_checks(repo, commit, files, args, report, work):
     source = "https://distribution.invalid/research-lab.git"
     run(["git", "config", "--file", work / "gitconfig", f"url.{origin.as_uri()}.insteadOf", source], env=env)
     native.update(baseline_commit=baseline, candidate_commit=commit, changed_plugin_files=changed,
+                  added_plugin_files=sorted(set(new) - set(old)), removed_plugin_files=sorted(set(old) - set(new)),
+                  baseline_plugin_files=sorted(BASELINE_PLUGIN_FILES), candidate_plugin_files=sorted(PLUGIN_FILES),
                   local_origin=str(origin), source_transport="child-only Git URL rewrite to owned bare file origin")
     added = command("plugin", "marketplace", "add", source)
     marketplace_root = Path(added["installedRoot"]).resolve()
     command("plugin", "add", "research-lab@research-lab")
     state("installed-A", old, baseline)
+    load_at("installed-A", old)
     run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", commit], env=env)
     command("plugin", "marketplace", "upgrade", "research-lab")
     state("refreshed-B", new)
-    native["loader"] = loader(cli, env, project, installed, work, "refreshed-B")
+    native["loader"] = load_at("refreshed-B", new)
     state("loaded-B", new)
     unavailable = work / "origin-unavailable.git"
     require(origin.resolve().is_relative_to(work) and unavailable.resolve().is_relative_to(work), "Origin move escaped work directory")
@@ -373,17 +453,21 @@ def native_checks(repo, commit, files, args, report, work):
     try:
         command("plugin", "marketplace", "upgrade", "research-lab", expected_success=False)
         state("failed-refresh-retained-B", new)
+        load_at("failed-refresh-retained-B", new)
     finally:
         unavailable.rename(origin)
     command("plugin", "remove", "research-lab@research-lab")
     state("removed", {})
     require(not installed.exists(), "Removed plugin cache directory remains")
+    load_at("removed", {})
     command("plugin", "add", "research-lab@research-lab")
     state("reinstalled-B", new)
-    native["reinstalled_loader"] = loader(cli, env, project, installed, work, "reinstalled-B")
+    native["reinstalled_loader"] = load_at("reinstalled-B", new)
     state("reinstalled-loaded-B", new)
     run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", baseline], env=env)
     command("plugin", "marketplace", "upgrade", "research-lab")
+    state("restored-A", old, baseline)
+    load_at("restored-A", old)
     state("restored-A", old, baseline)
 
 

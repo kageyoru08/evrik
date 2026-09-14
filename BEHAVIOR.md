@@ -87,6 +87,34 @@ Model-blind artifact review found a saved-record closure weakness in the Luna ca
 
 These are three continuing chains and 27 correlated stages, not 27 independent cases. Astra/Sol replication reused the recovery source archive; Luna retained identical implementation/model and result bytes but a different full archive because research notes differed, so its repeatability claim is limited to source behavior. The new protocol reused the known fixed split and did not create fresh statistical validation. No native context compaction or host crash was forced. Artifact reconstruction by a fresh reviewer does not prove recovery after actual compaction. Full native tool transcripts, token usage, all historical label reads, and effective backend identity remain unverified. This bounded design supports the observed continuation behavior, not arbitrary task lengths or a model ranking.
 
+## Native evidence mechanism development
+
+Two prescribed project-hook probes on CLI 0.153.4 tested source capture
+separately from autonomous research. Both retained the eight installed plugin
+files at `70d11a01c8a61ac011a31d367776d1adc5127f7e`; the hook prototypes were
+protected fixture inputs, so these results do not qualify the later packaged
+hook integration.
+
+The first probe exposed two exact mismatches: native web responses used
+`input_text` blocks that its `text`-only filter rejected, and the actual outer
+wrappers contained an additional terminal LF. It retained no captured body
+and performed no controlled denial. That failure remains part of the evidence.
+
+The second probe changed only the strict accepted block type, explicit wrapper
+LF and a bounded native identity control. Its three wrapper inputs matched the
+frozen bytes. Search/open receipts matched the actual returned public blocks;
+the find receipt matched an exclusive saved claim, and the native post hook
+blocked the awaited call before its wrapper emitted the public result.
+Canonical session identity matched independently, and the final saved report
+was read back before the answer. Independent grading recorded 21 passes, no
+failures, three limited observations and four unexercised capabilities.
+
+This supports the tested nested capture and denial mechanism. It does not
+establish outer-hook coverage, arbitrary JavaScript exposure ordering, child
+inheritance, automatic Stop review or autonomous workflow success. The new
+packaged activation/readback/close workflow requires its own exact-candidate
+checks and native observation before those capabilities can be claimed.
+
 ## Scope
 
 These bounded synthetic workloads include a continuing native task, fresh-context model groups, and deterministic runner probes. They add evidence for skill use, training-informed choice, protocol use, traceable execution, negative results, and restrained interpretation within the observability limits above. The repeated cohort covers only two fixed cases and three requested models on one host; it is not coverage of every installed model or Codex version, a multi-day result, or a measurement of efficiency against OpenResearch. The automated runner suite separately covers invalid evidence, tampering, concurrent launches, timeouts, and unresolved execution. Integrity checks detect inconsistent remaining records; they are not protection against an actor coherently rewriting all local evidence.

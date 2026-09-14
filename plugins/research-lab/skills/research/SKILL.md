@@ -16,12 +16,22 @@ constraints, and stopping criteria.
 Use the literature path for discovery or synthesis, the experiment path for
 local experiments or their resumption, and both when the question requires
 both. Complete experiment entry before experimental edits or launches.
-Literature-only work needs neither Git nor the experiment runner.
+Literature-only work needs no Git or experiment protocol.
 
 Use the existing research note or checkpoint as the working record. Create
 only a necessary record within the authorized area, preserve historical
 entries, and carry its current state forward instead of reconstructing it
 from conversation at the end.
+
+Read [references/evidence.md](references/evidence.md) for the native evidence
+commands. For supported research sessions, explicitly activate the declared
+saved deliverables before source operations or experimental edits/launches;
+experiment activation follows the inherited-material entry below. Include
+the working checkpoint among the deliverables. Use `--public-web` only for
+authorized public source capture, and `--experiment` to attach existing runner
+state. Activation does not prove that native hooks are enabled or trusted.
+If the supported session, interpreter or hook route is unavailable, retain
+that limitation and use the reference's explicit fallback within scope.
 
 Follow the applicable work path, then Write, Review saved content, and Answer.
 Continue ordinary authorized work without waiting for a coordinator to advance
@@ -106,11 +116,12 @@ When live discovery is requested, perform a relevant search. Supplied links
 are leads; opening them alone is not discovery.
 
 Capture each completed search or batch before further discovery or synthesis.
-When native tool composition is available, use the capture pattern in the
-literature reference to save and verify the actual request, date, and response
-within the same call before returning it. Link that verified receipt from the
-working record and add brief coverage and selection notes; do not copy its
-raw fields again.
+For an activated supported native web route, the plugin hook records the
+actual request and response. Inspect the saved receipt before using it as
+captured evidence. Link it from the working record and add brief coverage and
+selection notes; do not copy its raw fields again. A missing receipt,
+unsupported body or capture error is incomplete evidence, not successful
+automatic capture. Do not repeat retrieval to conceal a recording failure.
 
 Otherwise immediately record the exact queries, actual search date, returned
 source identifiers, and coverage/selection notes through native file tools.
@@ -129,7 +140,8 @@ section heading and URL, and brief evidence supporting the claim. Follow the
 reference's primary-source, evidence-family, conflicting-finding, access, and
 source-instruction handling requirements.
 
-Use the same native capture transaction for bounded source-reading responses.
+Use the same activated capture path for bounded source-reading responses,
+or the literature reference's explicit fallback when that path is unavailable.
 Retain each actual open/find request and its returned passage or access error,
 verify the saved response, then expose it for synthesis. A find that returns
 only locations needs a bounded open for material text. Metadata-only output
@@ -172,6 +184,12 @@ Save the requested deliverables. Saving them is not completion.
 After saving, read the relevant contents of the actual saved deliverables
 and compare them with the retained evidence.
 
+For an activated session, run the exact `evidence readback` invocation
+returned by activation and expose its complete output. It reads all declared
+saved text and returns the attached obligation/run view. Review those actual
+contents; a helper's emission or native response match does not establish
+understanding. Resolve an incomplete or truncated return before relying on it.
+
 For literature, cover all source/access statements and citation locators.
 For experiments, read the current checkpoint, including inherited-action
 resolutions, and reconcile its source, decision, paths, cumulative budget,
@@ -184,6 +202,13 @@ particular command or every-byte reread is required.
 Correct discrepancies and read back the affected saved content after changes.
 Preserve historical entries and original evidence. Reconcile requested work
 against performed actions, not merely the existence of output files.
+
+Use `evidence check` and then `evidence close` for an activated session after
+the final correction/readback. Changed deliverables or attached evidence make
+the earlier readback stale. If a required operation remains unavailable, use
+explicit incomplete close with the concrete reason and retain the unmet
+requirement. Closing evidence records is not scientific acceptance or proof
+that the narrative is complete.
 
 ## Answer from reviewed results
 

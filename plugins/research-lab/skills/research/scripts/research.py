@@ -19,6 +19,7 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
+import shlex
 import signal
 import stat
 import subprocess
@@ -133,14 +134,14 @@ def atomic_json(path: Path, value: Any) -> None:
 
 
 @contextmanager
-def project_lock(storage: Path):
+def project_lock(storage: Path, wait_seconds: float = 15):
     """OS-owned lock: releases on process death, no stale PID recovery needed."""
     lock_path = safe_path(storage, ".lock")
     with lock_path.open("a+b") as stream:
         if lock_path.stat().st_size == 0:
             stream.write(b"0")
             stream.flush()
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + wait_seconds
         while True:
             try:
                 stream.seek(0)
@@ -655,6 +656,14 @@ def check_review_snapshot(project: Path, envelope: dict, archive: zipfile.ZipFil
             raise ResearchError(f"Reconciliation does not match prepared source: {name}")
 
 
+def reconciliation_coverage(envelope: dict) -> list[dict]:
+    sources, units, dispositions, comparisons = review_state(envelope)
+    current = {unit["id"] for source in sources.values() for unit in source["units"]}
+    return [{**unit, "disposition": dispositions.get(unit["id"]),
+             "carried_forward": unit["id"] not in current,
+             "required_comparison": comparisons.get(unit["id"])} for unit in units]
+
+
 def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
     with project_lock(storage):
         launches = ledger(storage)
@@ -730,16 +739,13 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
                                      "rationale": args.rationale, "recorded_at": utc_now(), "observation": observation})
             changed = True
         envelope = {"review": record, "sha256": digest(record)}
-        _, units, dispositions, comparisons = review_state(envelope)
-        current_units = {unit["id"] for source in sources.values() for unit in source["units"]}
+        coverage = reconciliation_coverage(envelope)
         if changed:
             safe_path(storage, "reconciliation").mkdir(exist_ok=True)
             atomic_json(safe_path(storage, "reconciliation", "review.json"), envelope)
         return {"registered": bool(record["sources"]), "entry_status": entry_status(envelope),
                 "machine_verified": False, **envelope,
-                "coverage": [{**unit, "disposition": dispositions.get(unit["id"]),
-                              "carried_forward": unit["id"] not in current_units,
-                              "required_comparison": comparisons.get(unit["id"])} for unit in units],
+                "coverage": coverage,
                 "runner": {"launches": launches, "runs": [
                     {key: manifest.get(key) for key in ("id", "label", "status", "source", "evidence")}
                     for _, manifest in (read_manifest(storage, directory.name)
@@ -1073,6 +1079,414 @@ def compare(storage: Path, baseline_id: str, candidate_id: str) -> dict:
                 "scope": "Primary-metric decision only; scientific validity requires the declared research protocol."}
 
 
+EVIDENCE_LIMIT = 262144
+HOOK_LIMIT = 1048576
+EVIDENCE_PRIVATE_KEYS = {"encrypted_content", "reasoning", "reasoning_content", "private_context",
+                         "transcript_path", "agent_transcript_path", "session_path", "authorization",
+                         "access_token", "refresh_token"}
+EVIDENCE_PRIVATE_PATH = re.compile(r"(?i)(?:(?<![a-z0-9])[a-z]:[\\/]|/(?:users|home)/|[\\/]\.codex[\\/](?:sessions|memories))")
+
+
+def evidence_id(value: Any) -> str:
+    try:
+        valid = isinstance(value, str) and str(uuid.UUID(value)) == value
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ResearchError("Evidence requires a canonical native session identity")
+    return value
+
+
+def evidence_paths(argument: str) -> tuple[Path, Path]:
+    project = Path(argument).absolute()
+    safe_path(project)
+    if not project.is_dir():
+        raise ResearchError("Evidence --project must be an existing directory")
+    return project, safe_path(project, ".research")
+
+
+def evidence_artifact(project: Path, name: str) -> Path:
+    if not isinstance(name, str):
+        raise ResearchError("Evidence artifact paths must be strings")
+    path = review_path(project, name)
+    if name.casefold().split("/")[0] == ".codex" or name.casefold().startswith(".research/evidence/"):
+        raise ResearchError("Evidence artifacts cannot select configuration or generated evidence")
+    return path
+
+
+def evidence_read(path: Path) -> dict:
+    envelope = read_json(path)
+    exact_keys(envelope, {"value", "sha256", "recorded_at"}, "evidence receipt")
+    if (not isinstance(envelope["value"], dict) or digest(envelope["value"]) != envelope["sha256"]
+            or not isinstance(envelope["recorded_at"], str) or not envelope["recorded_at"]):
+        raise ResearchError("Invalid evidence receipt")
+    return envelope["value"]
+
+
+def evidence_write(path: Path, value: dict, *, immutable: bool = False) -> None:
+    if immutable and path.exists():
+        if evidence_read(path) != value:
+            raise ResearchError("Conflicting evidence receipt; original preserved")
+        return
+    atomic_json(path, {"value": value, "sha256": digest(value), "recorded_at": utc_now()})
+
+
+def evidence_session(project: Path, directory: Path, session_id: str) -> dict | None:
+    path = safe_path(directory, "session.json")
+    if not path.exists():
+        return None
+    state = evidence_read(path)
+    exact_keys(state, {"schema_version", "project", "session_id", "owner_thread_id", "activations"}, "evidence session")
+    if (type(state["schema_version"]) is not int or state["schema_version"] != 1
+            or state["project"] != str(project) or state["session_id"] != session_id
+            or state["owner_thread_id"] != session_id or not isinstance(state["activations"], list)
+            or not state["activations"]):
+        raise ResearchError("Invalid evidence session binding")
+    for item in state["activations"]:
+        exact_keys(item, {"id", "artifacts", "public_web", "experiment", "handler_sha256", "readback_command",
+                          "state", "opened_at", "closed_at", "reason", "latest_readback"}, "evidence activation")
+        if (not isinstance(item["id"], str) or not re.fullmatch(r"[0-9a-f]{32}", item["id"])
+                or item["state"] not in {"active", "closed"} or type(item["public_web"]) is not bool
+                or type(item["experiment"]) is not bool or not isinstance(item["artifacts"], list)
+                or not item["artifacts"] or not isinstance(item["readback_command"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", str(item["handler_sha256"]))
+                or (item["latest_readback"] is not None and not re.fullmatch(r"[0-9a-f]{64}", str(item["latest_readback"])))):
+            raise ResearchError("Invalid evidence activation")
+        if (not isinstance(item["opened_at"], str) or not item["opened_at"]
+                or (item["state"] == "active" and (item["closed_at"] is not None or item["reason"] is not None))
+                or (item["state"] == "closed" and (not isinstance(item["closed_at"], str) or not item["closed_at"]
+                                                    or not isinstance(item["reason"], str) or not item["reason"].strip()))):
+            raise ResearchError("Invalid evidence activation lifecycle")
+        for name in item["artifacts"]:
+            evidence_artifact(project, name)
+        if len(set(item["artifacts"])) != len(item["artifacts"]):
+            raise ResearchError("Duplicate evidence artifacts")
+    if any(item["state"] != "closed" for item in state["activations"][:-1]):
+        raise ResearchError("Prior evidence activation is not closed")
+    return state
+
+
+def evidence_dependencies(project: Path, storage: Path, experiment: bool) -> dict:
+    if not experiment:
+        return {"experiment_attached": False, "ready": True}
+    project_paths(str(project))  # Existing Git contract; no discovery for literature.
+    validate_protocol(read_json(safe_path(storage, "protocol.json")))
+    review = load_review(storage, required=True)
+    result = {"experiment_attached": True, "ready": True, "reconciliation": review,
+              "coverage": reconciliation_coverage(review), "launches": ledger(storage), "runs": []}
+    try:
+        check_review(project, review, current=True)
+    except ResearchError as exc:
+        result.update(ready=False, reconciliation_issue=str(exc))
+    runs = safe_path(storage, "runs")
+    for directory in sorted(runs.iterdir()) if runs.exists() else []:
+        if not directory.is_dir() or not RUN_ID.fullmatch(directory.name):
+            continue
+        _, manifest = read_manifest(storage, directory.name)
+        unresolved = unresolved_launch(manifest, directory.name in result["launches"]["claims"])
+        files = {name: file_digest(safe_path(directory, name)) if safe_path(directory, name).is_file() else None
+                 for name in ("manifest.json", "source.zip", "result.json", "run.log")}
+        run = {"manifest": manifest, "files": files, "unresolved": unresolved}
+        try:
+            protocol = verify_snapshot(storage, directory, manifest)
+            if manifest["status"] == "completed" and (
+                    result_evidence(safe_path(directory, "result.json"), protocol["metric"]["name"]) != manifest["evidence"]
+                    or files["run.log"] != manifest.get("log_sha256")):
+                raise ResearchError("Completed run evidence changed")
+        except (ResearchError, OSError, ValueError, zipfile.BadZipFile) as exc:
+            run["evidence_issue"] = str(exc)
+            result["ready"] = False
+        result["runs"].append(run)
+        if unresolved:
+            result["ready"] = False
+    return result
+
+
+def evidence_snapshot(project: Path, storage: Path, directory: Path, activation: dict) -> dict:
+    artifacts, total = [], 0
+    for name in activation["artifacts"]:
+        path = evidence_artifact(project, name)
+        if not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
+            raise ResearchError(f"Required evidence artifact missing or not a regular file: {name}")
+        with path.open("rb") as stream:
+            raw = stream.read(EVIDENCE_LIMIT + 1)
+        total += len(raw)
+        if total > EVIDENCE_LIMIT:
+            raise ResearchError("Evidence readback exceeds the supported whole-text limit; coverage incomplete")
+        artifacts.append({"path": name, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+                          "text": raw.decode("utf-8")})
+    catalog, calls, complete = [], {}, True
+    for path in sorted(directory.glob(f"web-{activation['id']}-*.json")):
+        record = evidence_read(safe_path(directory, path.name))
+        catalog.append({"path": str(path.relative_to(project)), "sha256": file_digest(path)})
+        calls.setdefault(record["call"], {})[record["phase"]] = record["status"]
+        complete = complete and record["status"] in {"attempted", "captured_text"}
+    complete = complete and all(phases == {"PreToolUse": "attempted", "PostToolUse": "captured_text"}
+                                for phases in calls.values())
+    return {"artifacts": artifacts, "dependencies": evidence_dependencies(project, storage, activation["experiment"]),
+            "web": {"complete": complete, "receipts": catalog}}
+
+
+def evidence_status(project: Path, storage: Path, directory: Path, activation: dict) -> dict:
+    result = {"status": "missing_readback", "fresh": False, "native_response_matched": False,
+              "ready_to_close": False, "semantic_review_verified": False}
+    try:
+        snapshot = evidence_snapshot(project, storage, directory, activation)
+        result["web"] = snapshot["web"]
+        result["dependencies_ready"] = snapshot["dependencies"]["ready"]
+        receipt_id = activation["latest_readback"]
+        if receipt_id:
+            bundle = evidence_read(safe_path(directory, f"readback-{receipt_id}.json"))
+            if digest(bundle) != receipt_id or bundle.get("generation") != activation["id"]:
+                raise ResearchError("Readback receipt identity mismatch")
+            result["fresh"] = (bundle["snapshot"] == snapshot
+                               and activation["handler_sha256"] == file_digest(Path(__file__)))
+            match = safe_path(directory, f"matched-{receipt_id}.json")
+            if match.exists():
+                matched = evidence_read(match)
+                exact_keys(matched, {"call", "phase", "status", "request_sha256", "response_sha256", "receipt_id", "generation"}, "native reader match")
+                if not re.fullmatch(r"[0-9a-f]{64}", str(matched["call"])):
+                    raise ResearchError("Invalid matched native call")
+                post = evidence_read(safe_path(directory, f"reader-{activation['id']}-{matched['call']}-post.json"))
+                pre = evidence_read(safe_path(directory, f"reader-{activation['id']}-{matched['call']}-pre.json"))
+                expected_pre = {"call": matched["call"], "phase": "PreToolUse", "status": "attempted",
+                                "request_sha256": digest({"command": activation["readback_command"]})}
+                result["native_response_matched"] = (matched == post and pre == expected_pre
+                                                     and matched["request_sha256"] == pre["request_sha256"]
+                                                     and matched["receipt_id"] == receipt_id
+                                                     and matched["generation"] == activation["id"]
+                                                     and matched["status"] == "native_response_matched"
+                                                     and matched["phase"] == "PostToolUse")
+            result["status"] = "current" if result["fresh"] else "stale"
+        result["ready_to_close"] = (result["fresh"] and result["native_response_matched"]
+                                    and snapshot["web"]["complete"] and snapshot["dependencies"]["ready"])
+        if result["fresh"] and not result["ready_to_close"]:
+            result["status"] = "incomplete"
+    except (ResearchError, OSError, ValueError, KeyError, TypeError) as exc:
+        result.update(status="incomplete", issue=str(exc))
+    return result
+
+
+def evidence_action(args: argparse.Namespace) -> dict:
+    project, storage = evidence_paths(args.project)
+    session_id = evidence_id(os.environ.get("CODEX_SESSION_ID"))
+    if evidence_id(os.environ.get("CODEX_THREAD_ID")) != session_id:
+        raise ResearchError("Evidence activation supports only the native root owner, not children")
+    directory = safe_path(storage, "evidence", session_id)
+    if args.operation == "activate":
+        for name in args.artifact:
+            evidence_artifact(project, name)
+        if args.experiment:
+            evidence_dependencies(project, storage, True)
+        directory.mkdir(parents=True, exist_ok=True)
+    elif not safe_path(directory, "session.json").exists():
+        return {"status": "not_activated", "ready_to_close": False, "semantic_review_verified": False}
+    with project_lock(storage):
+        state = evidence_session(project, directory, session_id)
+        activation = state["activations"][-1] if state else None
+        if args.operation == "activate":
+            boundary = {"artifacts": sorted(set(args.artifact)), "public_web": args.public_web,
+                        "experiment": args.experiment, "handler_sha256": file_digest(Path(__file__))}
+            if activation and activation["state"] == "active":
+                if any(activation[key] != value for key, value in boundary.items()):
+                    raise ResearchError("Active evidence scope differs; close it honestly before a new activation")
+            else:
+                argv = [sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()),
+                        "evidence", "readback", "--project", str(project)]
+                command = ("& " + " ".join("'" + part.replace("'", "''") + "'" for part in argv)
+                           if os.name == "nt" else shlex.join(argv))
+                activation = {**boundary, "id": uuid.uuid4().hex, "readback_command": command, "state": "active",
+                              "opened_at": utc_now(), "closed_at": None, "reason": None, "latest_readback": None}
+                state = state or {"schema_version": 1, "project": str(project), "session_id": session_id,
+                                  "owner_thread_id": session_id, "activations": []}
+                state["activations"].append(activation)
+                evidence_write(safe_path(directory, "session.json"), state)
+            return {"status": "active", "session_id": session_id, "generation": activation["id"],
+                    "readback_command": activation["readback_command"], "artifacts": activation["artifacts"],
+                    "evidence_directory": str(directory.relative_to(project)), "semantic_review_verified": False}
+        if activation["state"] == "closed":
+            return {"status": "closed", "reason": activation["reason"], "semantic_review_verified": False}
+        if args.operation == "readback":
+            if activation["handler_sha256"] != file_digest(Path(__file__)):
+                raise ResearchError("Evidence handler changed; preserve and close the old activation")
+            bundle = {"session_id": session_id, "generation": activation["id"], "emitted_at": utc_now(),
+                      "snapshot": evidence_snapshot(project, storage, directory, activation)}
+            if len(canonical(bundle)) > EVIDENCE_LIMIT:
+                raise ResearchError("Evidence bundle exceeds the supported return limit; coverage incomplete")
+            receipt_id = digest(bundle)
+            evidence_write(safe_path(directory, f"readback-{receipt_id}.json"), bundle, immutable=True)
+            activation["latest_readback"] = receipt_id
+            evidence_write(safe_path(directory, "session.json"), state)
+            return {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
+        status = evidence_status(project, storage, directory, activation)
+        if args.operation == "close":
+            if bool(args.incomplete) != bool(args.reason and args.reason.strip()):
+                raise ResearchError("Incomplete close requires --incomplete and a nonempty --reason together")
+            if not args.incomplete and not status["ready_to_close"]:
+                raise ResearchError("Evidence is not ready to close: " + status["status"])
+            activation.update(state="closed", closed_at=utc_now(),
+                              reason=args.reason if args.incomplete else "Current evidence and native response matched; semantics not verified")
+            evidence_write(safe_path(directory, "session.json"), state)
+            return {**status, "status": "closed", "incomplete": args.incomplete, "reason": activation["reason"]}
+        return status
+
+
+def evidence_unsafe(value: Any, depth: int = 0) -> bool:
+    if depth > 16:
+        return True
+    if isinstance(value, dict):
+        return any(str(key).lower() in EVIDENCE_PRIVATE_KEYS or evidence_unsafe(item, depth + 1)
+                   for key, item in value.items())
+    if isinstance(value, list):
+        return any(evidence_unsafe(item, depth + 1) for item in value)
+    if isinstance(value, str):
+        if EVIDENCE_PRIVATE_PATH.search(value):
+            return True
+        if value.lstrip().startswith(("{", "[")):
+            try:
+                return evidence_unsafe(json.loads(value), depth + 1)
+            except (ValueError, RecursionError):
+                pass
+        return bool(re.search(r'''(?i)["'](?:encrypted_content|private_context|reasoning_content)["']\s*:''', value))
+    return False
+
+
+def evidence_text(value: Any) -> dict | None:
+    if isinstance(value, str):
+        result = {"representation": "string", "text": value}
+    else:
+        blocks = value.get("content") if isinstance(value, dict) else value
+        if (not isinstance(blocks, list) or not blocks or not all(
+                isinstance(block, dict) and set(block) == {"type", "text"}
+                and block["type"] in ("text", "input_text") and isinstance(block["text"], str) for block in blocks)):
+            return None
+        result = {"representation": "text_blocks", "content": blocks}
+    return result if len(canonical(result)) <= EVIDENCE_LIMIT and not evidence_unsafe(value) else None
+
+
+def evidence_public_request(value: Any) -> bool:
+    if not isinstance(value, dict) or evidence_unsafe(value) or len(canonical(value)) > EVIDENCE_LIMIT:
+        return False
+    operations = set(value) & {"search_query", "open", "find"}
+    if len(operations) != 1 or set(value) - operations - {"response_length"}:
+        return False
+    if "response_length" in value and value["response_length"] not in ("short", "medium", "long"):
+        return False
+    operation = next(iter(operations))
+    required, allowed = {"search_query": ({"q"}, {"q", "domains", "recency"}),
+                         "open": ({"ref_id"}, {"ref_id", "lineno"}),
+                         "find": ({"ref_id", "pattern"}, {"ref_id", "pattern"})}[operation]
+    items = value[operation]
+    if not isinstance(items, list) or not 1 <= len(items) <= 4:
+        return False
+    for item in items:
+        if not isinstance(item, dict) or not required <= set(item) <= allowed:
+            return False
+        for key, field in item.items():
+            if key in {"q", "ref_id", "pattern"} and (not isinstance(field, str) or not field.strip() or "\0" in field):
+                return False
+            if key == "ref_id" and not (re.match(r"https?://[^/@\s]+(?:/|$)", field)
+                                         or re.fullmatch(r"turn[0-9]+(?:search|view|fetch)[0-9]+", field)):
+                return False
+            if key in {"recency", "lineno"} and (type(field) is not int or field < 0):
+                return False
+            if key == "domains" and (not isinstance(field, list) or not field
+                                      or any(not isinstance(domain, str) or not re.fullmatch(r"[A-Za-z0-9.-]+", domain) for domain in field)):
+                return False
+    return True
+
+
+def evidence_hook() -> dict:
+    active = False
+    try:
+        raw = sys.stdin.buffer.read(HOOK_LIMIT + 1)
+        if len(raw) > HOOK_LIMIT:
+            return {}
+        event = json.loads(raw, parse_constant=reject_constant, object_pairs_hook=unique_json_object)
+        if not isinstance(event, dict) or any(key in event for key in ("agent_id", "agent_type")):
+            return {}
+        phase, name = event.get("hook_event_name"), event.get("tool_name")
+        if phase not in {"PreToolUse", "PostToolUse"} or name not in {"webrun", "Bash"}:
+            return {}
+        project, storage = evidence_paths(str(Path.cwd()))
+        if not isinstance(event.get("cwd"), str) or Path(event["cwd"]).absolute() != project:
+            return {}
+        session_id = evidence_id(event.get("session_id"))
+        directory = safe_path(storage, "evidence", session_id)
+        state = evidence_session(project, directory, session_id)
+        if state is None or state["activations"][-1]["state"] != "active":
+            return {}
+        activation = state["activations"][-1]
+        tool_input = event.get("tool_input")
+        reader = name == "Bash" and tool_input == {"command": activation["readback_command"]}
+        active = reader or (name == "webrun" and activation["public_web"])
+        if not active:
+            return {}
+        with project_lock(storage, wait_seconds=1):
+            state = evidence_session(project, directory, session_id)
+            activation = state["activations"][-1]
+            if activation["state"] != "active":
+                return {}
+            tool_input = event.get("tool_input")
+            reader = name == "Bash" and tool_input == {"command": activation["readback_command"]}
+            if not reader and not (name == "webrun" and activation["public_web"]):
+                return {}
+            if activation["handler_sha256"] != file_digest(Path(__file__)):
+                raise ResearchError("Handler identity changed")
+            tool_id = event.get("tool_use_id")
+            if not isinstance(tool_id, str) or not tool_id or len(tool_id) > 256:
+                raise ResearchError("Missing native call identity")
+            call = digest({"generation": activation["id"], "tool_use_id": tool_id})
+            prefix = f"{'reader' if reader else 'web'}-{activation['id']}-{call}"
+            path = safe_path(directory, f"{prefix}-{'pre' if phase == 'PreToolUse' else 'post'}.json")
+            request_ok = reader or evidence_public_request(tool_input)
+            record = {"call": call, "phase": phase, "status": "attempted" if request_ok else "incomplete",
+                      "request_sha256": digest(tool_input)}
+            if not reader and request_ok:
+                record["request"] = tool_input
+            if phase == "PostToolUse":
+                pre_path = safe_path(directory, prefix + "-pre.json")
+                pre = evidence_read(pre_path) if pre_path.exists() else None
+                matched_pre = (pre is not None and pre["status"] == "attempted"
+                               and pre["request_sha256"] == record["request_sha256"])
+                response = event.get("tool_response")
+                record["response_sha256"] = digest(response)
+                if reader:
+                    if not matched_pre:
+                        raise ResearchError("Reader request does not match its attempt")
+                    if not isinstance(response, str):
+                        raise ResearchError("Unsupported reader response")
+                    returned = json.loads(response, parse_constant=reject_constant, object_pairs_hook=unique_json_object)
+                    exact_keys(returned, {"status", "receipt_id", "readback"}, "reader return")
+                    receipt_id = returned["receipt_id"]
+                    if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
+                        raise ResearchError("Invalid reader receipt")
+                    bundle = evidence_read(safe_path(directory, f"readback-{receipt_id}.json"))
+                    if (returned != {"status": "emitted", "receipt_id": receipt_id, "readback": bundle}
+                            or digest(bundle) != receipt_id or bundle["generation"] != activation["id"]
+                            or bundle["session_id"] != session_id):
+                        raise ResearchError("Reader response differs from saved evidence")
+                    record.update(status="native_response_matched", receipt_id=receipt_id, generation=activation["id"])
+                else:
+                    text = evidence_text(response) if request_ok and matched_pre else None
+                    record["status"] = "captured_text" if text is not None else "incomplete"
+                    if text is not None:
+                        record["returned_text"] = text
+            if path.exists() and evidence_read(path) != record:
+                evidence_write(safe_path(directory, f"web-{activation['id']}-{call}-conflict-{digest(record)}.json"),
+                               {"call": call, "phase": "conflict", "status": "incomplete", "sha256": digest(record)}, immutable=True)
+                raise ResearchError("Conflicting native response")
+            evidence_write(path, record, immutable=True)
+            if reader and phase == "PostToolUse":
+                evidence_write(safe_path(directory, f"matched-{record['receipt_id']}.json"), record, immutable=True)
+            if record["status"] == "incomplete":
+                raise ResearchError("Unsupported or filtered capture")
+        return {}
+    except (ResearchError, OSError, ValueError, KeyError, TypeError, RecursionError):
+        # No raw input, private paths, response text or exception detail is logged.
+        return {"decision": "block", "reason": "Research evidence capture incomplete; preserve the original operation and do not retry retrieval. Native delivery handling remains a platform boundary."} if active else {}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
@@ -1099,10 +1513,31 @@ def main() -> int:
             command.add_argument("--current", help="Protected current file to compare with the reference and its HEAD blob")
             command.add_argument("--reference-range", help="Optional zero-based, end-exclusive START:END byte range")
             command.add_argument("--current-range", help="Optional zero-based, end-exclusive START:END byte range")
+    evidence = sub.add_parser("evidence", help="Explicit native-session evidence without requiring Git")
+    actions = evidence.add_subparsers(dest="operation", required=True)
+    for name in ("activate", "readback", "check", "close", "hook"):
+        action = actions.add_parser(name)
+        if name != "hook":
+            action.add_argument("--project", required=True, help="Explicit authorized filesystem root")
+        if name == "activate":
+            action.add_argument("--artifact", action="append", required=True)
+            action.add_argument("--public-web", action="store_true")
+            action.add_argument("--experiment", action="store_true")
+        if name == "close":
+            action.add_argument("--incomplete", action="store_true")
+            action.add_argument("--reason")
     args = parser.parse_args()
     try:
         if sys.version_info < (3, 11):
             raise ResearchError("Python 3.11 or newer is required")
+        if args.action == "evidence":
+            try:
+                result = evidence_hook() if args.operation == "hook" else evidence_action(args)
+            except (TypeError, AttributeError, RecursionError) as exc:
+                raise ResearchError("Invalid evidence state or input") from exc
+            if result:
+                print(json.dumps(result, indent=2, allow_nan=False))
+            return 0
         project, storage = project_paths(args.project, create=args.action == "init")
         if args.action == "init":
             result = initialize(project, storage)
