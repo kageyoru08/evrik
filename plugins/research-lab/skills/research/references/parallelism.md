@@ -30,8 +30,12 @@ context where supported; disclose inherited exposure rather than claiming
 cognitive independence. Each participant preserves its initial position,
 supporting evidence and uncertainties before seeing others' conclusions. Keep
 author-owned notes append-only: retain every earlier entry and append corrections
-that identify the affected claim and supporting evidence. Preserving an initial
-prefix alone does not preserve later entries. Use one writer for the shared
+that identify the affected claim and supporting evidence. Prefer an end-of-file
+append operation for later entries. Any permitted writing method must put new
+material after the old end of file and verify that all prior bytes remain an
+unchanged prefix; combine the write and verification in one authorized operation
+where supported. Preserving an initial prefix alone does not preserve later
+entries. Use one writer for the shared
 decision body, which may be revised subject to renewed review below; avoid
 unnecessary new records.
 
@@ -112,14 +116,20 @@ native fallback for their own authorized retrieval. They must not impersonate
 the root or claim inherited automatic capture. Share one canonical evaluator
 ledger and total budget; parallel work does not create extra launches or retries.
 
-Track each participant's actual work and remaining limits in the existing notes.
-Count every attempted underlying invocation once, including shell reads, every
-file patch, failed/rejected calls, evidence commands, sends, follow-ups and waits
-in their applicable categories. Count each tool invoked by a wrapper without
-adding the wrapper as another underlying call. Reconcile participant subtotals
-against visible calls and returns before
-reporting a shared total, including final review, corrections and closure. Mark
-incomplete coverage as unknown rather than claiming an exact reconciled count.
+Track attempted operations as they occur. At existing note or response updates,
+record compact participant subtotals by the applicable tool/category, including
+failed/rejected attempts and the current update. Count every underlying
+invocation once, including shell reads, every file patch, evidence commands,
+sends, follow-ups and waits. Count tools invoked by a wrapper without charging
+that wrapper again; a wrapper doing work without a nested tool counts once in
+its applicable category. Before more work, check the remaining assigned or
+verified shared allowance, keeping final review, a permitted revision and
+closure reserved. Unknown usage is not extra allowance. Combine related reads
+or concise attributed material items where permitted, preserving complete
+objections and responses; do not add a separate ledger or a bookkeeping call
+for every action. Reconcile subtotals against visible calls and returns before
+reporting a shared total. Mark incomplete coverage as unknown rather than
+claiming an exact reconciled count.
 A normal wait timeout consumes its wait allowance and is not a failed send or
 proof that a peer failed. Continue only within the remaining shared time and
 permitted activations; never reset the deadline or blindly repeat an ambiguous
