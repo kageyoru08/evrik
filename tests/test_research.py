@@ -1145,7 +1145,12 @@ class EvidenceTests(unittest.TestCase):
                                        for i in range(4)], "response_length": "long"},
                     {"open": [{"ref_id": "https://docs.python.org/3/library/hashlib.html", "lineno": i}
                               for i in range(5)]},
-                    {"find": [{"ref_id": "turn1view0", "pattern": f"sha256 {i}"} for i in range(9)]}]
+                    {"find": [{"ref_id": "turn1view0", "pattern": f"sha256 {i}"} for i in range(9)]},
+                    {"find": [{"ref_id": "turn1view0", "pattern": "counter"}],
+                     "open": [{"ref_id": "https://example.com/primary-source"}], "response_length": "short"},
+                    {"search_query": [{"q": "primary evidence"}],
+                     "open": [{"ref_id": "turn1search0", "lineno": 10}],
+                     "find": [{"ref_id": "turn1view0", "pattern": "methods"}], "response_length": "long"}]
         for index, request in enumerate(requests):
             call = "web-" + str(index)
             response = [{"type": "input_text" if index % 2 == 0 else "text", "text": f"Public source turn{index}view0: checked passage."}]
@@ -1160,7 +1165,7 @@ class EvidenceTests(unittest.TestCase):
             with self.report.open("a", encoding="utf-8") as stream:
                 stream.write("\n".join(ref["path"] for ref in source["receipts"]) + "\n")
         readback = self.native_readback(activation, "reader")
-        self.assertEqual(len(readback["readback"]["snapshot"]["web"]["receipts"]), 6)
+        self.assertEqual(len(readback["readback"]["snapshot"]["web"]["receipts"]), 2 * len(requests))
         self.assertTrue(self.invoke("check")["ready_to_close"])
         self.assertFalse((self.project / ".research/protocol.json").exists())
         self.assertFalse((self.project / ".git").exists())
@@ -1179,6 +1184,13 @@ class EvidenceTests(unittest.TestCase):
         secret = "NEVER_RETAIN_PRIVATE_BODY_12345"
         for call, invalid in (("too-many-searches", {"search_query": [{"q": "public evidence"}] * 5}),
                               ("empty-find", {"find": []}),
+                              ("mixed-empty-find", {"open": [{"ref_id": "https://example.com/"}], "find": []}),
+                              ("mixed-invalid-member", {"open": [{"ref_id": "https://example.com/", "lineno": True}],
+                                                        "find": [{"ref_id": "turn1view0", "pattern": "text"}]}),
+                              ("mixed-unsupported", {"open": [{"ref_id": "https://example.com/"}],
+                                                     "click": [{"ref_id": "turn1view0", "id": 1}]}),
+                              ("mixed-private", {"open": [{"ref_id": "https://example.com/"}],
+                                                 "find": [{"ref_id": "turn1view0", "pattern": json.dumps({"private_context": secret})}]}),
                               ("oversized-find", {"find": [{"ref_id": "turn1view0", "pattern": "x" * 262144}]})):
             self.assertEqual(self.hook("PreToolUse", call, invalid)["decision"], "block")
         for call, response in (("private", [{"type": "input_text", "text": json.dumps({"encrypted_content": secret})}]),

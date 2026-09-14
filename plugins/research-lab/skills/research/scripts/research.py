@@ -1679,31 +1679,31 @@ def evidence_public_request(value: Any) -> bool:
     if not isinstance(value, dict) or evidence_unsafe(value) or len(canonical(value)) > EVIDENCE_LIMIT:
         return False
     operations = set(value) & {"search_query", "open", "find"}
-    if len(operations) != 1 or set(value) - operations - {"response_length"}:
+    if not operations or set(value) - operations - {"response_length"}:
         return False
     if "response_length" in value and value["response_length"] not in ("short", "medium", "long"):
         return False
-    operation = next(iter(operations))
-    required, allowed = {"search_query": ({"q"}, {"q", "domains", "recency"}),
-                         "open": ({"ref_id"}, {"ref_id", "lineno"}),
-                         "find": ({"ref_id", "pattern"}, {"ref_id", "pattern"})}[operation]
-    items = value[operation]
-    if not isinstance(items, list) or not items or (operation == "search_query" and len(items) > 4):
-        return False
-    for item in items:
-        if not isinstance(item, dict) or not required <= set(item) <= allowed:
+    for operation in operations:
+        required, allowed = {"search_query": ({"q"}, {"q", "domains", "recency"}),
+                             "open": ({"ref_id"}, {"ref_id", "lineno"}),
+                             "find": ({"ref_id", "pattern"}, {"ref_id", "pattern"})}[operation]
+        items = value[operation]
+        if not isinstance(items, list) or not items or (operation == "search_query" and len(items) > 4):
             return False
-        for key, field in item.items():
-            if key in {"q", "ref_id", "pattern"} and (not isinstance(field, str) or not field.strip() or "\0" in field):
+        for item in items:
+            if not isinstance(item, dict) or not required <= set(item) <= allowed:
                 return False
-            if key == "ref_id" and not (re.match(r"https?://[^/@\s]+(?:/|$)", field)
-                                         or re.fullmatch(r"turn[0-9]+(?:search|view|fetch)[0-9]+", field)):
-                return False
-            if key in {"recency", "lineno"} and (type(field) is not int or field < 0):
-                return False
-            if key == "domains" and (not isinstance(field, list) or not field
-                                      or any(not isinstance(domain, str) or not re.fullmatch(r"[A-Za-z0-9.-]+", domain) for domain in field)):
-                return False
+            for key, field in item.items():
+                if key in {"q", "ref_id", "pattern"} and (not isinstance(field, str) or not field.strip() or "\0" in field):
+                    return False
+                if key == "ref_id" and not (re.match(r"https?://[^/@\s]+(?:/|$)", field)
+                                             or re.fullmatch(r"turn[0-9]+(?:search|view|fetch)[0-9]+", field)):
+                    return False
+                if key in {"recency", "lineno"} and (type(field) is not int or field < 0):
+                    return False
+                if key == "domains" and (not isinstance(field, list) or not field
+                                          or any(not isinstance(domain, str) or not re.fullmatch(r"[A-Za-z0-9.-]+", domain) for domain in field)):
+                    return False
     return True
 
 

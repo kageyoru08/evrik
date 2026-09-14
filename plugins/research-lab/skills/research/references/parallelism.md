@@ -25,7 +25,10 @@ position and withhold adoption. Shared standing does not expand permission.
 
 Give peers the common question, evidence, allowed work area, excluded operations,
 file ownership and remaining shared limits, without the facilitator's preliminary
-answer. Read-only actions still have to satisfy these boundaries. Use fresh
+answer. Read-only actions still have to satisfy these boundaries. Include
+applicable entry prerequisites, their order and known resolved guidance paths.
+Peers must read required guidance not yet inspected before dependent scientific
+operations; do not batch those operations with unread entry instructions. Use fresh
 context where supported; disclose inherited exposure rather than claiming
 cognitive independence. Each participant preserves its initial position,
 supporting evidence and uncertainties before seeing others' conclusions. Keep
@@ -35,7 +38,12 @@ append operation for later entries. Any permitted writing method must put new
 material after the old end of file and verify that all prior bytes remain an
 unchanged prefix; combine the write and verification in one authorized operation
 where supported. Preserving an initial prefix alone does not preserve later
-entries. Use one writer for the shared
+entries. Before publishing an append subject to a hard size limit, check that its
+complete encoded suffix, including separators, fits the remaining space. A failed
+write may leave bytes behind: inspect current content and preserve those bytes as
+history. Never truncate or restore an earlier prefix to fit a limit; retain an
+incomplete result if a valid correction cannot fit.
+Use one writer for the shared
 decision body, which may be revised subject to renewed review below; avoid
 unnecessary new records.
 

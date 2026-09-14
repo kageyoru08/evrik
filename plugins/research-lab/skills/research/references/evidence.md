@@ -32,7 +32,10 @@ no response body and create no review obligation. Close the session before
 unrelated work. Ordinary single-fact answers do not activate this workflow.
 
 For public-web capture, `--record` selects the working record from the declared
-artifacts. After each captured operation, run the literal source-reader
+artifacts. A request may combine supported `search_query`, `open` and `find`
+groups; each group must be valid. Capture retains the whole request and response
+without inventing associations between individual queries and returned sources.
+After each captured operation, run the literal source-reader
 invocation returned by activation as its own native command and return each
 complete output page. Follow its literal `next_command` until all pages of
 that receipt have been exposed and inspected. It reads saved source evidence without needing the final
