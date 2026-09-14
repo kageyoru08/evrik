@@ -16,6 +16,20 @@ sys.path.insert(0, str(ROOT / "examples"))
 from run_demo import RUNNER, command, git, make_project
 
 
+RELEASE_GATED_WORKER = (
+    "import sys,time\nfrom pathlib import Path\n"
+    "started, heartbeat, release, finished, expired = map(Path, sys.argv[1:])\n"
+    "heartbeat.write_text(str(time.monotonic()))\n"
+    "started.write_text('started')\n"
+    "deadline = time.monotonic() + 60\n"
+    "while not release.exists():\n"
+    " if time.monotonic() >= deadline:\n"
+    "  expired.write_text('expired without release')\n  sys.exit(0)\n"
+    " heartbeat.write_text(str(time.monotonic()))\n time.sleep(0.02)\n"
+    "finished.write_text('released')\n"
+)
+
+
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="research lab test ")
@@ -780,25 +794,39 @@ class RunnerTests(unittest.TestCase):
     def test_timeout_stops_the_owned_child_tree(self):
         marker = Path(self.temporary.name) / "child-survived.txt"
         started = Path(self.temporary.name) / "child-started.txt"
-        child = "import sys,time; from pathlib import Path; Path(sys.argv[2]).write_text('started'); time.sleep(2); Path(sys.argv[1]).write_text('survived')"
-        parent = "import subprocess,sys,time\nsubprocess.Popen([sys.executable, '-c', " + repr(child) + ", sys.argv[2], sys.argv[3]])\ntime.sleep(30)\n"
+        heartbeat = Path(self.temporary.name) / "child-heartbeat.txt"
+        release = Path(self.temporary.name) / "child-release.txt"
+        expired = Path(self.temporary.name) / "child-expired.txt"
+        parent = ("import subprocess,sys,time\nsubprocess.Popen([sys.executable, '-c', "
+                  + repr(RELEASE_GATED_WORKER) + ", *sys.argv[2:]])\ntime.sleep(30)\n")
         self.commit_file("timeout.py", parent)
         def configure(protocol):
-            protocol["command"] = ["{python}", "timeout.py", "{result}", str(marker), str(started)]
+            protocol["command"] = ["{python}", "timeout.py", "{result}", str(started),
+                                   str(heartbeat), str(release), str(marker), str(expired)]
             protocol["budget"]["timeout_seconds"] = 1
         self.protocol(configure)
         run_id = self.prepare("timeout")
-        result = self.invoke("run", "--id", run_id, expected=1)
-        self.assertEqual(result["status"], "timed_out")
-        self.assertEqual(result["evidence"]["status"], "invalid")
-        self.assertTrue(started.exists(), "Child did not start, so cleanup was not exercised")
-        self.assertTrue(result["cleanup"]["direct_child_reaped"])
-        self.assertEqual(result["cleanup"]["descendant_state"], "unknown")
-        self.assertNotIn("tree_termination_confirmed", result["cleanup"])
-        self.assertTrue(command(self.project, "inspect", "--id", run_id)["unresolved"])
-        time.sleep(1.3)
-        self.assertFalse(marker.exists(), "Child survived timeout cleanup")
-        self.invoke("run", "--id", run_id, expected=2)
+        result = {}
+        try:
+            result = self.invoke("run", "--id", run_id, expected=1)
+            self.assertFalse(marker.exists(), "Child wrote before release")
+            release.write_text("observe after cleanup", encoding="utf-8")
+            self.assertEqual(result["status"], "timed_out")
+            self.assertEqual(result["evidence"]["status"], "invalid")
+            self.assertTrue(started.exists(), "Child did not start, so cleanup was not exercised")
+            self.assertTrue(result["cleanup"]["direct_child_reaped"])
+            self.assertEqual(result["cleanup"]["descendant_state"], "unknown")
+            self.assertNotIn("tree_termination_confirmed", result["cleanup"])
+            self.assertTrue(command(self.project, "inspect", "--id", run_id)["unresolved"])
+            self.invoke("run", "--id", run_id, expected=2)
+        finally:
+            # A surviving fixture child must also be released after an earlier assertion fails.
+            release.write_text("stop", encoding="utf-8")
+            deadline = time.monotonic() + 3
+            while not marker.exists() and not expired.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertFalse(expired.exists(), "Child expired; cleanup observation is invalid")
+            self.assertFalse(marker.exists(), f"Child responded after timeout cleanup: {result.get('cleanup')}")
 
     @unittest.skipIf(os.name == "nt", "POSIX detached-process regression")
     def test_detached_child_demonstrates_why_descendant_state_stays_unknown(self):
@@ -832,14 +860,7 @@ class RunnerTests(unittest.TestCase):
         heartbeat = Path(self.temporary.name) / "worker-heartbeat.txt"
         release = Path(self.temporary.name) / "worker-release.txt"
         finished = Path(self.temporary.name) / "worker-finished.txt"
-        worker = (
-            "import sys,time\nfrom pathlib import Path\n"
-            "Path(sys.argv[1]).write_text('started')\n"
-            "deadline = time.monotonic() + 10\n"
-            "while not Path(sys.argv[3]).exists() and time.monotonic() < deadline:\n"
-            " Path(sys.argv[2]).write_text(str(time.monotonic()))\n time.sleep(0.02)\n"
-            "Path(sys.argv[4]).write_text('finished')\n"
-        )
+        expired = Path(self.temporary.name) / "worker-expired.txt"
         evaluator = (
             "import os,subprocess,sys,threading,time\nfrom pathlib import Path\n"
             "def fail_after_start():\n"
@@ -847,12 +868,12 @@ class RunnerTests(unittest.TestCase):
             " while not Path(sys.argv[2]).exists() and time.monotonic() < deadline: time.sleep(0.01)\n"
             " os._exit(3)\n"
             "threading.Thread(target=fail_after_start, daemon=True).start()\n"
-            "subprocess.run([sys.executable, '-c', " + repr(worker)
-            + ", sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]], check=True)\n"
+            "subprocess.run([sys.executable, '-c', " + repr(RELEASE_GATED_WORKER)
+            + ", *sys.argv[2:]], check=True)\n"
         )
         self.commit_file("failed.py", evaluator)
         self.protocol(lambda p: p.update(command=["{python}", "failed.py", "{result}",
-                                                 str(started), str(heartbeat), str(release), str(finished)]))
+                                                 str(started), str(heartbeat), str(release), str(finished), str(expired)]))
         run_id = self.prepare("failed-foreground-evaluator")
         try:
             result = self.invoke("run", "--id", run_id, expected=1)
@@ -868,12 +889,14 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(overview["launch_claims_used"], 1)
             self.assertGreater(heartbeat.stat().st_mtime_ns, before_inspect, "Worker was not alive during inspection")
             self.assertFalse(finished.exists(), "Worker should remain held until the test releases it")
+            self.assertFalse(expired.exists(), "Worker expired before the survivor observation")
             self.invoke("run", "--id", run_id, expected=2)
         finally:
             release.write_text("stop", encoding="utf-8")
             deadline = time.monotonic() + 3
             while not finished.exists() and time.monotonic() < deadline:
                 time.sleep(0.02)
+            self.assertFalse(expired.exists(), "Worker expired instead of responding to release")
             self.assertTrue(finished.exists(), "Worker did not finish after the test released it")
 
     def test_inspect_preserves_cleanup_uncertainty_in_detail_and_list(self):
