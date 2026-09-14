@@ -54,7 +54,11 @@ reference checks do not assess the scientific meaning of the notes, source
 access, version relevance or citation accuracy. Arbitrary writes and chat
 are outside this prerequisite.
 
-Use the literal platform invocation returned by activation for readback.
+Activation's `readback_command` and `sources_command`, when present, are shell
+commands for the existing native execution tool, not separately named reader
+tools. Run the returned string literally, preserving its executable, script
+path, flags, quoting and project. A hand-written equivalent can emit output
+without producing a native match.
 The reader returns bounded JSON frames containing complete canonical-JSON
 text segments of one saved bundle. Small bundles have one page. Return each
 complete frame through a separate native call, then follow its exact

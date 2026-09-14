@@ -6,6 +6,13 @@ The bundled runner uses Python 3.11 or newer, the Python standard library, and G
 
 Record the question, hypothesis, baseline, permitted code changes, primary metric and direction, meaningful improvement threshold, and stopping budget before observing candidate results. Describe relevant data identity, split construction, leakage controls, seeds, repeated-trial design, and environment. Predeclare uncertainty and stability checks when the acceptance decision depends on them.
 
+When a task requires a fixed evaluator and shared evaluation budget, candidate
+performance comparisons use that evaluator and budget, including exploratory
+or train-only comparisons. An ad hoc score calculation outside the runner is
+not exempt. Descriptive inspection and coefficient derivation that do not
+score or compare candidate performance remain permitted within scope; apply
+the task's counting units and explicit exceptions.
+
 Use a common baseline for paired ablations and a sequential lineage for justified iterative optimization. There is no mandatory experiment tree. Keep post-result revisions explicit and use new runs for changed inputs or protocols.
 
 The runner protocol is `.research/protocol.json`. `init` creates a starting protocol without overwriting an existing one. Review and edit it to match the project; its defaults are not a scientific design. The executable protocol includes:
