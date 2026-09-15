@@ -1193,6 +1193,29 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse((self.project / ".research/protocol.json").exists())
         self.assertFalse((self.project / ".git").exists())
 
+    def test_public_reference_subtypes_and_pre_validation_preserve_usable_capture(self):
+        activation = self.activate("--public-web", "--record", "report.md")
+        before = self.inventory()
+        for index, reference in enumerate(("file:///C:/Users/example/source.md", "../private.md",
+                                            "C:\\Users\\example\\source.md",
+                                            "turn1X" + "9" * 120000 + "Z")):
+            refused = self.hook("PreToolUse", f"invalid-{index}", {"open": [{"ref_id": reference}]})
+            self.assertEqual(refused["decision"], "block")
+            self.assertIn("before retrieval", refused["reason"])
+            self.assertEqual(self.inventory(), before)
+        # Synthetic hook envelopes exercise the real CLI, including a subtype
+        # returned by the native H01 search; source IDs are never normalized.
+        request = {"open": [{"ref_id": "turn0academia21"}, {"ref_id": "turn9future_source3"}],
+                   "find": [{"ref_id": "turn0academia21", "pattern": "snapshot"}]}
+        self.assertEqual(self.hook("PreToolUse", "valid", request), {})
+        self.assertEqual(self.hook("PostToolUse", "valid", request, "Public source passage."), {})
+        source = self.native_readback(activation, "source", sources=True)["readback"]["capture"]
+        self.assertEqual(source["request"], request)
+        self.report.write_text("\n".join(ref["path"] for ref in source["receipts"]), encoding="utf-8")
+        self.native_readback(activation, "final")
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        self.assertFalse(self.invoke("close")["incomplete"])
+
     def test_private_unsupported_missing_attempt_and_conflicts_remain_incomplete(self):
         activation = self.activate("--public-web", "--record", "report.md")
         request = {"find": [{"ref_id": "https://example.com/", "pattern": "public"}]}

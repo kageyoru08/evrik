@@ -41,13 +41,17 @@ complete output page. Follow its literal `next_command` until all pages of
 that receipt have been exposed and inspected. It reads saved source evidence without needing the final
 report to exist. Inspect the actual request, returned text, source identities
 and capture date; retain the generated receipt references in the working
-record with your coverage, selection and material evidence notes. Complete
-any remaining pending reads before another source operation.
+record with your coverage, selection and material evidence notes. Copy the
+emitted `capture.receipts[*].path` strings exactly; never reconstruct hashed
+filenames from memory. Complete any remaining pending reads before another
+source operation.
 
 The next supported web call waits for the matched source-reader response and
 current record references. A local prerequisite refusal occurs before web
 execution; satisfy that local requirement before submitting the intended
-operation. A capture failure remains a separate incomplete operation whose
+operation. Invalid request shapes are also refused before retrieval without
+creating capture receipts; correct only the local request. A capture failure
+after retrieval remains a separate incomplete operation whose
 surviving evidence must be preserved. Ordinary close rechecks the references
 so a rewritten checkpoint cannot silently discard them. Exact response and
 reference checks do not assess the scientific meaning of the notes, source

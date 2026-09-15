@@ -1698,7 +1698,7 @@ def evidence_public_request(value: Any) -> bool:
                 if key in {"q", "ref_id", "pattern"} and (not isinstance(field, str) or not field.strip() or "\0" in field):
                     return False
                 if key == "ref_id" and not (re.match(r"https?://[^/@\s]+(?:/|$)", field)
-                                             or re.fullmatch(r"turn[0-9]+(?:search|view|fetch)[0-9]+", field)):
+                                             or re.fullmatch(r"turn[0-9]+[A-Za-z][A-Za-z0-9_-]*[0-9]", field)):
                     return False
                 if key in {"recency", "lineno"} and (type(field) is not int or field < 0):
                     return False
@@ -1748,6 +1748,9 @@ def evidence_hook() -> dict:
             if not reader and not (name == "webrun" and activation["public_web"]):
                 return {}
             request_ok = bool(reader) or evidence_public_request(tool_input)
+            if not reader and not request_ok and phase == "PreToolUse":
+                return {"decision": "block", "reason": "Unsupported public web request refused before retrieval; "
+                        "no capture attempt was recorded. Correct the request within the supported public scope before submitting it."}
             if not reader and request_ok and phase == "PreToolUse":
                 sources, _ = evidence_sources(project, directory, activation)
                 if not sources["ready"]:

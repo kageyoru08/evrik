@@ -190,6 +190,11 @@ cumulative budget, and unresolved execution or other limitations. Do not
 replace the inherited-action record with a results-only summary.
 
 Save the requested deliverables. Saving them is not completion.
+Before final readback, reconcile the checkpoint's current status and next
+actions with work already performed, for literature as well as experiments.
+Keep historical entries as history; do not leave completed actions listed as
+current pending work. Record later reader/closure outcomes separately from
+that snapshot, without claiming success in advance.
 
 ## Review saved content
 
@@ -197,7 +202,10 @@ After saving, read the relevant contents of the actual saved deliverables
 and compare them with the retained evidence.
 
 For an activated session, follow the literal, separate-page readback procedure
-and freshness checks in [references/evidence.md](references/evidence.md). Review
+and freshness checks in [references/evidence.md](references/evidence.md). Request
+at least 16,384 output tokens when supported on every initial,
+continuation and correction reader call and its outer wrapper; a large
+request is still no guarantee of complete native delivery. Review
 the actual saved contents and attached obligation/run state in context; matched
 delivery does not establish understanding. Use `evidence check` for pending work.
 
