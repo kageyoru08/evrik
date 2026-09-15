@@ -16,7 +16,8 @@ constraints, and stopping criteria.
 Use the literature path for discovery or synthesis, the experiment path for
 local experiments or their resumption, and both when the question requires
 both. Complete experiment entry before experimental edits or launches.
-Literature-only work needs no Git or experiment protocol.
+Literature-only work needs no experiment protocol. Use Git only when the actual
+authorized task requires it, and honor explicit project scope.
 
 For an explicit peer meeting, or a consequential authorized research choice
 where competing explanations can change the decision, read
@@ -195,6 +196,8 @@ actions with work already performed, for literature as well as experiments.
 Keep historical entries as history; do not leave completed actions listed as
 current pending work. Record later reader/closure outcomes separately from
 that snapshot, without claiming success in advance.
+Qualify incomplete action counts or timing rather than guessing exact totals;
+unobserved work grants no extra budget.
 
 ## Review saved content
 
@@ -255,8 +258,11 @@ capability needs and cost; mixed families are not required. If a family's latest
 version cannot be established or is unavailable, use the other family only if its
 latest is verified and available; never silently fall back to an older version.
 A successful supported native model-selection call and returned participant
-identity establish the configured choice, not backend model attestation. A role
-prompt or assumed default alone does not establish an eligible selection.
+identity establish the configured choice, not backend model attestation. An
+already-selected participant, including a coordinator, may use a parent/host's
+actual native selection receipt bound to its own returned ID, model and effort;
+it need not select itself again. Retain the receipt's source; a role prompt or
+assumed default alone does not establish an eligible selection.
 An ineligible initiator may use a supported native route to an eligible coordinator
 only if it then ceases participating in that multiagent operation. Do not disguise
 participation as solo work. If no eligible native selection is available, retain

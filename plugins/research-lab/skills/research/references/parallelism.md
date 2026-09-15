@@ -32,10 +32,13 @@ dismiss a disputed material blocker alone or declare an unreviewed decision
 joint. Every participant may request evidence, propose alternatives, revise a
 position and withhold adoption. Shared standing does not expand permission.
 
-Give peers the common question, evidence, allowed work area, excluded operations,
-file ownership and remaining shared limits, without the facilitator's preliminary
-answer. Read-only actions still have to satisfy these boundaries. Include
-applicable entry prerequisites, their order and known resolved guidance paths.
+Prefer one compact, identified initial task packet in the coordinator's existing
+note, with the common question and evidence, allowed work area, excluded
+operations, each peer's file ownership and remaining shared limits. Include
+available native selection receipts, without the facilitator's preliminary
+answer. Send a pointer to avoid duplicate copies; verify actual recipient
+read/response as below. Read-only actions still have to satisfy these boundaries.
+Include applicable entry prerequisites, their order and known resolved guidance paths.
 Peers must finish required guidance in bounded reads before dependent scientific
 operations; do not batch those operations with unread guidance. If ordinary local
 guidance output is incomplete, read its missing required passages within the
@@ -149,8 +152,9 @@ closure reserved. Unknown usage is not extra allowance. Combine related reads
 or concise attributed material items where permitted, preserving complete
 objections and responses; do not add a separate ledger or a bookkeeping call
 for every action. Reconcile subtotals against visible calls and returns before
-reporting a shared total. Mark incomplete coverage as unknown rather than
-claiming an exact reconciled count.
+reporting a shared total. Mark incomplete count or timing coverage as unknown or
+qualified rather than guessing exact totals. Constrained budgets and the canonical
+launch ledger still apply.
 A normal wait timeout consumes its wait allowance and is not a failed send or
 proof that a peer failed. Continue only within the remaining shared time and
 permitted activations; never reset the deadline or blindly repeat an ambiguous

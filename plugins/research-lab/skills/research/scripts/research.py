@@ -1593,8 +1593,23 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     "readback_command": activation["readback_command"], "artifacts": activation["artifacts"],
                     "sources_command": activation.get("sources_command"), "record": activation.get("record"),
                     "evidence_directory": str(directory.relative_to(project)), "semantic_review_verified": False}
+        if args.operation == "close" and bool(args.incomplete) != bool(args.reason and args.reason.strip()):
+            raise ResearchError("Incomplete close requires --incomplete and a nonempty --reason together")
         if activation["state"] == "closed":
-            return {"status": "closed", "reason": activation["reason"], "semantic_review_verified": False}
+            result = {"status": "closed", "reason": activation["reason"], "semantic_review_verified": False}
+            if args.operation in {"check", "close"}:
+                current = evidence_status(project, storage, directory, activation)
+                result["current_evidence"] = {key: current[key] for key in (
+                    "status", "fresh", "native_response_matched", "ready_to_close", "unmet", "issue",
+                    "dependencies_ready") if key in current}
+                if not current["ready_to_close"]:
+                    result["recovery"] = ("The historical close is unchanged. Further native review requires "
+                                          "an explicit new activation; closed readers and hooks remain inactive.")
+                    if args.operation == "close" and not args.incomplete:
+                        error = ResearchError("Closed session does not meet current evidence requirements")
+                        error.evidence_status = result
+                        raise error
+            return result
         if args.operation in {"readback", "sources"}:
             if activation["handler_sha256"] != file_digest(Path(__file__)):
                 raise ResearchError("Evidence handler changed; preserve and close the old activation")
@@ -1616,7 +1631,10 @@ def evidence_action(args: argparse.Namespace) -> dict:
                 bundle = {"session_id": session_id, "generation": activation["id"],
                           "capture": pending[0] if pending else None,
                           "remaining_unread_captures": max(0, len(pending) - 1),
-                          "missing_record_refs": sources["missing_record_refs"]}
+                          "missing_record_refs": sources["missing_record_refs"],
+                          "record": activation["record"],
+                          "record_refs_hint": "These saved receipt paths were absent from record when this bundle was created. "
+                                              "Retain them with your source notes, then check; this is not a source access or capture failure."}
             else:
                 bundle = {"session_id": session_id, "generation": activation["id"], "emitted_at": utc_now(),
                           "snapshot": evidence_snapshot(project, storage, directory, activation)}
@@ -1630,8 +1648,6 @@ def evidence_action(args: argparse.Namespace) -> dict:
             return frames[0]
         status = evidence_status(project, storage, directory, activation)
         if args.operation == "close":
-            if bool(args.incomplete) != bool(args.reason and args.reason.strip()):
-                raise ResearchError("Incomplete close requires --incomplete and a nonempty --reason together")
             if not args.incomplete and not status["ready_to_close"]:
                 error = ResearchError("Evidence is not ready to close: " + status.get("sources", {}).get("issue", status["status"]))
                 error.evidence_status = status

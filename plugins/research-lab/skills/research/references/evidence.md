@@ -43,8 +43,11 @@ report to exist. Inspect the actual request, returned text, source identities
 and capture date; retain the generated receipt references in the working
 record with your coverage, selection and material evidence notes. Copy the
 emitted `capture.receipts[*].path` strings exactly; never reconstruct hashed
-filenames from memory. Complete any remaining pending reads before another
-source operation.
+filenames from memory. The bundle's `missing_record_refs` lists saved receipt
+paths absent from its named `record` when that bundle was created. Retain them
+with the source notes, then check the current state; this list does not report
+a source access or capture failure. Complete any remaining pending reads
+before another source operation.
 
 The next supported web call waits for the matched source-reader response and
 current record references. A local prerequisite refusal occurs before web
@@ -96,7 +99,16 @@ fresh required records, supported native reader matches and retained source
 references, and then disables capture. It does not label the research
 scientifically complete.
 
-`check` and a refused ordinary close name the unmet conditions and return the
+After closure, explicit `check` and repeated `close` still inspect current
+evidence. Their `status: closed` describes the historical session;
+`current_evidence` reports whether the saved review remains current. An
+ordinary repeated close refuses changed or incomplete evidence without
+rewriting the original close. Readers and capture stay inactive. Further
+native review requires a deliberate new activation; do not rewrite the
+reviewed checkpoint merely to add the later close result. Report that
+execution tail separately.
+
+While active, `check` and a refused ordinary close name the unmet conditions and return the
 literal reader commands and pending-page progress. If the latest readback
 has no native match, use `next_readback_command`; for pending sources use
 the source status's `next_command`. Run it alone, expose the complete output
