@@ -105,7 +105,7 @@ Check corrections, version differences, and newer evidence when the subject or c
 
 ## Synthesize by claim
 
-Connect each consequential claim to its supporting source and scope: population or dataset, intervention or method, comparator, metric, and conditions. Preserve distinctions between empirical observations, author interpretations, theoretical arguments, and your own inference.
+Connect each consequential claim to its supporting source and scope: population or dataset, intervention or method, comparator, metric, and conditions. Preserve distinctions between empirical observations, author interpretations, theoretical arguments, and your own inference. Keep task/source qualifiers and distinct guarantees intact in the conclusion. Attribute each passage to the inspected document/version, not merely to a work it cites.
 
 Compare conflicting findings through their methods and conditions before choosing an explanation. Do not count papers as votes. Report relevant negative or null findings and plausible limitations of the available evidence. A benchmark gain supports the evaluated setting; extending it to another setting is a hypothesis.
 

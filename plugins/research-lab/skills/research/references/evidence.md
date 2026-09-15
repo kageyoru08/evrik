@@ -42,11 +42,14 @@ that receipt have been exposed and inspected. It reads saved source evidence wit
 report to exist. Inspect the actual request, returned text, source identities
 and capture date; retain the generated receipt references in the working
 record with your coverage, selection and material evidence notes. Copy the
-emitted `capture.receipts[*].path` strings exactly; never reconstruct hashed
-filenames from memory. The bundle's `missing_record_refs` lists saved receipt
-paths absent from its named `record` when that bundle was created. Retain them
-with the source notes, then check the current state; this list does not report
-a source access or capture failure. Complete any remaining pending reads
+bundle's exact standalone `record_reference` token for each required capture,
+or all of that capture's emitted `capture.receipts[*].path` strings. Never
+reconstruct hashed references from memory. The bundle's `missing_record_refs`
+lists saved receipt paths lacking either reference form in its named `record`
+when that bundle was created. Retain a valid reference with the source notes,
+then check the current state; this list does not report a source access or
+capture failure. A reference cannot substitute for inspecting and matching
+the complete source-reader response. Complete any remaining pending reads
 before another source operation.
 
 The next supported web call waits for the matched source-reader response and

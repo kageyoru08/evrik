@@ -1281,6 +1281,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse((self.project / ".research").exists())
         self.report.unlink()
         activation = self.activate("--artifact", "checkpoint.md", "--public-web", "--record", "report.md")
+        self.assertEqual(activation["reader_output_hint"], self.invoke("check")["reader_output_hint"])
+        self.assertIn("16384", activation["reader_output_hint"])
+        self.assertIn("bytes are not tokens", activation["reader_output_hint"])
+        self.assertIn("delivery is not verified", activation["reader_output_hint"])
+        saved_activation = json.loads((self.directory() / "session.json").read_text(encoding="utf-8"))["value"]["activations"][-1]
+        self.assertNotIn("reader_output_hint", saved_activation)
         request = {"open": [{"ref_id": "https://example.com/source"}, {"ref_id": "turn1search0"}]}
         response = [{"type": "text", "text": "First complete source return."},
                     {"type": "input_text", "text": "Second source: metadata only, version 3.7."}]
@@ -1294,6 +1300,9 @@ class EvidenceTests(unittest.TestCase):
         emitted = self.invoke("sources")
         emitted_bundle = json.loads(emitted["page"]["text"])
         capture = emitted_bundle["capture"]
+        self.assertEqual(set(emitted), {"status", "reader", "receipt_id", "generation", "page", "next_command"})
+        self.assertEqual(set(capture), {"id", "request", "captured_at", "receipts", "returned_text"})
+        self.assertEqual(emitted_bundle["record_reference"], "source:" + capture["id"])
         self.assertEqual(capture["request"], request)
         self.assertEqual(capture["returned_text"]["content"], response)
         self.assertTrue(capture["captured_at"])
@@ -1307,9 +1316,11 @@ class EvidenceTests(unittest.TestCase):
         references = "\n".join(ref["path"] for ref in capture["receipts"]) + "\n"
         for ref in capture["receipts"]:
             self.assertEqual(hashlib.sha256((self.project / ref["path"]).read_bytes()).hexdigest(), ref["sha256"])
-        self.report.write_text(references, encoding="utf-8")
+        self.report.write_text(emitted_bundle["record_reference"], encoding="utf-8")
         self.assertEqual(self.hook("PreToolUse", "next", request)["decision"], "block")
-        self.assertTrue(self.invoke("check")["sources"]["pending_reads"])
+        status = self.invoke("check")["sources"]
+        self.assertTrue(status["pending_reads"])
+        self.assertEqual(status["missing_record_refs"], [])
         # Exact command and emitted JSON are both necessary, even with real saved references.
         reader = {"command": activation["sources_command"]}
         self.hook("PreToolUse", "wrong-source", reader, name="Bash")
@@ -1328,6 +1339,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(self.invoke("check")["ready_to_close"])
         empty = self.native_readback(activation, "no-pending-source", sources=True)
         self.assertIsNone(empty["readback"]["capture"])
+        self.assertIsNone(empty["readback"]["record_reference"])
         self.assertEqual(empty["readback"]["missing_record_refs"], [])
         self.assertEqual(emitted_bundle["missing_record_refs"], [ref["path"] for ref in capture["receipts"]])
         self.assertTrue(self.invoke("check")["fresh"])  # Generated packet/match records do not self-invalidate.
@@ -1365,6 +1377,64 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("Legacy", self.invoke("close", expected=2)["error"])
         self.assertIn("Legacy", self.hook("PreToolUse", "legacy", request)["reason"])
         self.assertTrue(self.invoke("close", "--incomplete", "--reason", "Preserve the original source boundary.")["incomplete"])
+
+    def test_source_tokens_bind_each_current_capture_and_detect_record_changes(self):
+        activation = self.activate("--public-web", "--record", "report.md")
+        request = {"open": [{"ref_id": "https://example.com/source"}]}
+        self.assertEqual(self.hook("PreToolUse", "first", request), {})
+        self.assertEqual(self.hook("PostToolUse", "first", request, "Public source."), {})
+        bundle = self.native_readback(activation, "source", sources=True)["readback"]
+        token = bundle["record_reference"]
+        self.assertEqual(token, "source:" + bundle["capture"]["id"])
+        paths = [ref["path"] for ref in bundle["capture"]["receipts"]]
+        invalid = ["source:" + "0" * 64, token[:-1], token + "0", token.upper()]
+        invalid += [prefix + token for prefix in ("a", "_", ":", "/", "-", "é")]
+        invalid += [token + suffix for suffix in ("a", "_", ":", "/", "-", "é")]
+        for text in invalid:
+            with self.subTest(invalid=text):
+                self.report.write_text(text, encoding="utf-8")
+                status = self.invoke("check")["sources"]
+                self.assertEqual(status["pending_reads"], [])
+                self.assertEqual(status["missing_record_refs"], paths)
+                self.assertFalse(status["ready"])
+        for left, right in (("", ""), ("\n", "\t"), ("`", "`"), ('"', '"'), ("'", "'"),
+                            ("(", ")"), ("[", "]"), ("{", "}"), (" ", ","),
+                            (" ", ";"), (" ", "."), (" ", "!"), (" ", "?")):
+            with self.subTest(delimiters=(left, right)):
+                self.report.write_text(left + token + right, encoding="utf-8")
+                self.assertTrue(self.invoke("check")["sources"]["ready"])
+        self.native_readback(activation, "first-final")
+        self.assertTrue(self.invoke("close")["ready_to_close"])
+
+        current = self.activate("--public-web", "--record", "report.md")
+        self.assertNotEqual(current["generation"], activation["generation"])
+        self.assertEqual(self.hook("PreToolUse", "current", request), {})
+        self.assertEqual(self.hook("PostToolUse", "current", request, "Current public source."), {})
+        current_bundle = self.native_readback(current, "current-source", sources=True)["readback"]
+        current_token = current_bundle["record_reference"]
+        current_paths = [ref["path"] for ref in current_bundle["capture"]["receipts"]]
+        self.report.write_text(token, encoding="utf-8")
+        self.assertNotEqual(token, current_token)
+        self.assertEqual(self.invoke("check")["sources"]["missing_record_refs"], current_paths)
+        self.report.write_text(current_token, encoding="utf-8")
+        self.assertEqual(self.hook("PreToolUse", "later", request), {})
+        self.assertEqual(self.hook("PostToolUse", "later", request, "Another current source."), {})
+        later = self.native_readback(current, "later-source", sources=True)["readback"]
+        self.report.write_text(later["record_reference"], encoding="utf-8")
+        self.assertEqual(self.invoke("check")["sources"]["missing_record_refs"], current_paths)
+        complete = "\n".join((token, current_token, later["record_reference"]))
+        self.report.write_text(complete, encoding="utf-8")
+        self.native_readback(current, "complete-final")
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        self.report.write_text(token + "\n" + later["record_reference"], encoding="utf-8")
+        status = self.invoke("check")
+        self.assertFalse(status["fresh"])
+        self.assertTrue(status["native_response_matched"])
+        self.assertEqual(status["sources"]["pending_reads"], [])
+        self.assertEqual(status["sources"]["missing_record_refs"], current_paths)
+        self.assertFalse(self.invoke("close", expected=2)["evidence"]["ready_to_close"])
+        self.report.write_text(complete, encoding="utf-8")
+        self.assertTrue(self.invoke("close")["ready_to_close"])
 
     def test_paged_reader_preserves_unicode_and_requires_every_unique_native_page(self):
         text = ('quote " slash \\ CRLF\r\n café e\u0301 漢字 😀\n' * 1300)
@@ -1464,8 +1534,13 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.hook("PostToolUse", "source", request, source_text), {})
         first, _ = self.native_page(activation["sources_command"], "source-page-zero")
         self.assertGreater(first["page"]["count"], 1)
+        saved = json.loads((self.directory() / f"sources-{first['receipt_id']}.json").read_text(encoding="utf-8"))["value"]
+        self.report.write_text(saved["record_reference"], encoding="utf-8")
         self.assertEqual(self.hook("PreToolUse", "next-web", request)["decision"], "block")
         status = self.invoke("check")["sources"]
+        self.assertEqual(status["missing_record_refs"], [])
+        self.assertTrue(status["pending_reads"])
+        self.invoke("close", expected=2)
         self.assertEqual(status["reader_progress"]["matched_pages"], 1)
         self.assertEqual(status["next_command"], first["next_command"])
         source_post = next(self.directory().glob("web-*-post.json"))
@@ -1485,6 +1560,7 @@ class EvidenceTests(unittest.TestCase):
         bundle = json.loads("".join(frame["page"]["text"] for frame in frames))
         self.assertEqual(bundle["capture"]["returned_text"]["text"], source_text)
         self.assertEqual(self.invoke("check")["sources"]["pending_reads"], [])
+        self.report.write_text("Source assessment without its reference.\n", encoding="utf-8")
         self.assertEqual(self.hook("PreToolUse", "no-refs", request)["decision"], "block")
         self.report.write_text("\n".join(ref["path"] for ref in bundle["capture"]["receipts"]), encoding="utf-8")
         self.native_readback(activation, "final-source-report")

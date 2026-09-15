@@ -1083,6 +1083,12 @@ def compare(storage: Path, baseline_id: str, candidate_id: str) -> dict:
 EVIDENCE_LIMIT = 262144
 READER_TEXT_LIMIT = 6144
 READER_OUTPUT_LIMIT = 16384
+READER_OUTPUT_HINT = (
+    "For each generated reader page, request max_output_tokens=16384 or more where supported and preserve "
+    "the complete outer result. Frames are capped at 16384 UTF-8 bytes including the final newline; "
+    "bytes are not tokens, and platform delivery is not verified."
+)
+SOURCE_RECORD_REFERENCE = re.compile(r"""(?:\A|[\s`"'(\[{])source:([0-9a-f]{64})(?=\Z|[\s`"')\]},;.!?])""")
 HOOK_LIMIT = 1048576
 EVIDENCE_PRIVATE_KEYS = {"encrypted_content", "reasoning", "reasoning_content", "private_context",
                          "transcript_path", "agent_transcript_path", "session_path", "authorization",
@@ -1460,12 +1466,14 @@ def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[
             if bundle.get("capture") == pending[0]:
                 result["reader_progress"] = evidence_reader_progress(directory, activation, "sources", receipt_id, bundle)
                 result["next_command"] = result["reader_progress"]["next_command"]
+    record_references = set(SOURCE_RECORD_REFERENCE.findall(text))
     result["missing_record_refs"] = [ref["path"] for capture in captures for ref in capture["receipts"]
-                                     if ref["path"] not in text]
+                                     if capture["id"] not in record_references and ref["path"] not in text]
     result["ready"] = not (pending or result["missing_record_refs"])
     if not result["ready"]:
-        result["issue"] = ("Saved sources require their exact native reader response and receipt paths in the current record. "
-                           "Complete every pending reader page using next_command, retain its receipt paths in "
+        result["issue"] = ("Saved sources require their exact native reader response and references in the current record. "
+                           "Complete every pending reader page using next_command, retain each capture's "
+                           "record_reference or its complete literal receipt paths in "
                            + activation["record"] + ", then check again.")
     return result, pending
 
@@ -1506,7 +1514,7 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
               "semantic_review_note": "False is expected: semantic judgment is outside machine proof and is not a normal-close prerequisite.",
               "latest_readback": activation["latest_readback"], "readback_command": activation["readback_command"],
               "next_readback_command": activation["readback_command"],
-              "sources_command": activation.get("sources_command")}
+              "sources_command": activation.get("sources_command"), "reader_output_hint": READER_OUTPUT_HINT}
     try:
         result["sources"], _ = evidence_sources(project, directory, activation)
         snapshot = evidence_snapshot(project, storage, directory, activation)
@@ -1592,7 +1600,8 @@ def evidence_action(args: argparse.Namespace) -> dict:
             return {"status": "active", "session_id": session_id, "generation": activation["id"],
                     "readback_command": activation["readback_command"], "artifacts": activation["artifacts"],
                     "sources_command": activation.get("sources_command"), "record": activation.get("record"),
-                    "evidence_directory": str(directory.relative_to(project)), "semantic_review_verified": False}
+                    "evidence_directory": str(directory.relative_to(project)), "semantic_review_verified": False,
+                    "reader_output_hint": READER_OUTPUT_HINT}
         if args.operation == "close" and bool(args.incomplete) != bool(args.reason and args.reason.strip()):
             raise ResearchError("Incomplete close requires --incomplete and a nonempty --reason together")
         if activation["state"] == "closed":
@@ -1630,11 +1639,13 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     raise ResearchError(sources.get("issue", "Sources reader requires explicit public-web activation"))
                 bundle = {"session_id": session_id, "generation": activation["id"],
                           "capture": pending[0] if pending else None,
+                          "record_reference": "source:" + pending[0]["id"] if pending else None,
                           "remaining_unread_captures": max(0, len(pending) - 1),
                           "missing_record_refs": sources["missing_record_refs"],
                           "record": activation["record"],
                           "record_refs_hint": "These saved receipt paths were absent from record when this bundle was created. "
-                                              "Retain them with your source notes, then check; this is not a source access or capture failure."}
+                                              "Retain each capture's record_reference or all its literal receipt paths with your "
+                                              "source notes, then check; this is not a source access or capture failure."}
             else:
                 bundle = {"session_id": session_id, "generation": activation["id"], "emitted_at": utc_now(),
                           "snapshot": evidence_snapshot(project, storage, directory, activation)}

@@ -146,6 +146,8 @@ experimental edit cannot retroactively satisfy the pre-edit requirement.
 
 `prepare` snapshots committed code using `git archive` and records the protocol, declared data identities, and execution identity in `.research/runs/`. Identical scientific inputs and current reconciliation receipt return an eligible existing run record; inspect its state and use `prepare ... --replicate` only when a fresh repeated trial is intended. Retain the returned run ID. A later change in the working checkout does not change a prepared run's code snapshot.
 
+Use complete returned IDs and hashes in notes. For exact-byte restoration, restore the applicable files from the evaluated snapshot as bytes and verify against its hashes; Git/text-mode normalization can change checkout bytes. Run dependent selection or evaluation only after its prerequisite succeeds.
+
 The active protocol's `budget` must match the prepared budget before launch. Changing `max_runs` or `timeout_seconds` requires a new preparation under the active limits; running an older prepared ID will be rejected. The recorded scientific protocol stays frozen. This prelaunch check does not change an already running evaluator's limits.
 
 The source archive does not make undeclared inputs, external services, or host dependencies reproducible. Declare relevant inputs, keep evaluation code inspectable, and document remaining environment assumptions.
