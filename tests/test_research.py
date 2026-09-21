@@ -880,14 +880,21 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["exit_code"], 3)
             self.assertTrue(started.exists())
-            before_inspect = heartbeat.stat().st_mtime_ns
             self.assertFalse(finished.exists())
             detail = command(self.project, "inspect", "--id", run_id)
             overview = command(self.project, "inspect")
             self.assertTrue(detail["unresolved"])
             self.assertTrue(overview["runs"][0]["unresolved"])
             self.assertEqual(overview["launch_claims_used"], 1)
-            self.assertGreater(heartbeat.stat().st_mtime_ns, before_inspect, "Worker was not alive during inspection")
+            # Observe progress after inspection instead of racing the worker's next write.
+            heartbeats = set()
+            deadline = time.monotonic() + 1
+            while len(heartbeats) < 2 and time.monotonic() < deadline:
+                sample = heartbeat.read_text()
+                if sample:
+                    heartbeats.add(sample)
+                time.sleep(0.02)
+            self.assertEqual(len(heartbeats), 2, "Worker did not make progress after inspection")
             self.assertFalse(finished.exists(), "Worker should remain held until the test releases it")
             self.assertFalse(expired.exists(), "Worker expired before the survivor observation")
             self.invoke("run", "--id", run_id, expected=2)
