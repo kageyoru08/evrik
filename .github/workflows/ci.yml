@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: npm install --global @openai/codex@0.153.4
+      - run: npm install --global @openai/codex@0.155.1
       - name: Check committed package and native plugin lifecycle
         run: python tests/check_distribution.py --native --work-dir "${{ runner.temp }}/research-lab-distribution"
       - name: Verify published commit through the public marketplace origin

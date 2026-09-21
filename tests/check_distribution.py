@@ -40,7 +40,7 @@ PLUGIN_FILES = BASELINE_PLUGIN_FILES | {
 HOOK_COMMAND = 'python3 -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 HOOK_COMMAND_WINDOWS = 'python -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 BASELINE = "37bf04427c14c204450cd56576852573cab360b7"
-CLI_VERSION = "codex-cli 0.153.4"
+CLI_VERSION = "codex-cli 0.155.1"
 MARKETPLACE = ".agents/plugins/marketplace.json"
 REPO_FILES = {PLUGIN + name for name in PLUGIN_FILES} | {
     MARKETPLACE, ".gitattributes", ".gitignore", ".github/workflows/ci.yml",
@@ -180,7 +180,7 @@ def audit_package(repo, revision, report, work):
 
 def codex_binary(requested):
     executable = Path(requested or shutil.which("codex") or "")
-    require(executable.is_file(), "Install official @openai/codex@0.153.4 or pass --codex")
+    require(executable.is_file(), "Install official @openai/codex@0.155.1 or pass --codex")
     if executable.suffix.lower() == ".exe":
         return str(executable.resolve())
     # npm's shim starts a child process. Use its installed native binary so the
