@@ -40,7 +40,6 @@ PLUGIN_FILES = BASELINE_PLUGIN_FILES | {
 HOOK_COMMAND = 'python3 -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 HOOK_COMMAND_WINDOWS = 'python -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 BASELINE = "37bf04427c14c204450cd56576852573cab360b7"
-CLI_VERSION = "codex-cli 0.155.1"
 MARKETPLACE = ".agents/plugins/marketplace.json"
 REPO_FILES = {PLUGIN + name for name in PLUGIN_FILES} | {
     MARKETPLACE, ".gitattributes", ".gitignore", ".github/workflows/ci.yml",
@@ -180,7 +179,7 @@ def audit_package(repo, revision, report, work):
 
 def codex_binary(requested):
     executable = Path(requested or shutil.which("codex") or "")
-    require(executable.is_file(), "Install official @openai/codex@0.155.1 or pass --codex")
+    require(executable.is_file(), "Install official @openai/codex@latest or pass --codex")
     if executable.suffix.lower() == ".exe":
         return str(executable.resolve())
     # npm's shim starts a child process. Use its installed native binary so the
@@ -326,8 +325,11 @@ def native_checks(repo, commit, files, args, report, work):
     env.update(CODEX_HOME=str(home), HOME=str(home), USERPROFILE=str(home),
                GIT_CONFIG_GLOBAL=str(work / "gitconfig"), GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
     version = run([cli, "--version"], env=env).stdout.decode().strip()
-    require(version == CLI_VERSION, f"Expected {CLI_VERSION}; got {version}")
+    require(bool(version), "Codex --version returned no version")
+    with Path(cli).open("rb") as binary:
+        binary_sha256 = hashlib.file_digest(binary, "sha256").hexdigest()
     native = report["native"] = {"cli_version": version, "cli_binary": cli,
+                                  "cli_binary_sha256": binary_sha256,
                                   "scope": "plugin management and loader only; no authenticated model execution",
                                   "isolated_codex_home": str(home), "commands": [], "states": {}}
     python_command = "python" if os.name == "nt" else "python3"

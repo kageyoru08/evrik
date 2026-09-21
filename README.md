@@ -15,6 +15,8 @@ codex plugin add research-lab@research-lab
 
 Start a new Codex task after installation and review Research Lab's two hook definitions in `/hooks` before trusting them. Installation alone does not trust new or changed hooks. Invoke `$research` or select **Research Lab** in the skill picker; matching research requests may select it naturally. The skill and runner do not edit global Codex configuration or install a model provider; Codex's own trust interface persists the choices you make there.
 
+Research Lab does not restrict the Codex CLI or desktop app to a fixed version. Compatibility depends on the native plugin, skill, tool, and hook interfaces available in that environment. CI installs the latest stable CLI and checks actual installation, refresh, loading, and preservation behavior on Windows and Ubuntu. Each report records the tested CLI version and executable hash. A version change alone does not require a plugin change; an incompatible native interface change requires an explicit adaptation and verification. Desktop behavior is verified separately through its available native tools; CLI checks alone do not establish desktop model behavior.
+
 Example requests:
 
 > Use $research to assess recent evidence for this method. Read primary sources, distinguish full-text evidence from abstracts, and explain the unresolved questions.
@@ -33,7 +35,7 @@ For an installed plugin from this Git marketplace, refresh only Research Lab:
 codex plugin marketplace upgrade research-lab --json
 ```
 
-On the tested Codex CLI **0.153.4**, this command updated both the marketplace snapshot and the installed cached skill when its contents changed while the plugin version stayed **1.0.0**. This behavior has not been validated on other CLI versions.
+Same-version refresh has been observed on Codex CLI **0.153.4** and **0.155.1**: this command updated both the marketplace snapshot and the installed cached skill when its contents changed while the plugin version stayed **1.0.0**. These versions identify completed observations; compatibility checks use the installed CLI's actual behavior.
 
 Check that the response has no errors, then start a new Codex task and select **Research Lab**. An existing task may retain previously loaded skill instructions. For a reissue that keeps version **1.0.0**, identify the intended revision by its Git commit and compare the installed runner and skill file hashes with that commit; the version number alone cannot distinguish revisions.
 
