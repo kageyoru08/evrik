@@ -85,6 +85,15 @@ When a reader call uses `functions.exec`, put the first-line directive
 `max_output_tokens` to at least 16384 on the nested native execution call.
 The nested setting does not raise the wrapper's default. Apply both settings
 to every initial, continuation and correction page, and expose the full result.
+Activation and status also provide `readback_functions_exec_source` and
+`sources_functions_exec_source`. When using `functions.exec`, submit the
+corresponding source directly: it preserves the literal command, sets both
+output limits and exposes the complete native output for one page. New sessions'
+frames provide `next_functions_exec_source` for the next page, or null when done.
+Status provides the same template beside each pending command, including
+`next_readback_functions_exec_source`. Inspect each returned page before using
+the next template; do not batch or loop over templates. These call templates
+are a convenience, not proof of delivery or review, and do not run check or close.
 The helper reads every declared small UTF-8 file and saves an
 immutable bundle under `.research/evidence/`. Missing, unsafe, oversized or
 non-text artifacts are incomplete; no heading filter or silent truncation

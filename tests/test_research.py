@@ -968,7 +968,23 @@ class EvidenceTests(unittest.TestCase):
         return json.loads(result.stderr if expected == 2 else result.stdout)
 
     def activate(self, *args):
-        return self.invoke("activate", "--artifact", "report.md", *args)
+        result = self.invoke("activate", "--artifact", "report.md", *args)
+        for reader in ("readback", "sources"):
+            self.assert_reader_call_source(result[reader + "_functions_exec_source"], result[reader + "_command"])
+        return result
+
+    def assert_reader_call_source(self, source, command):
+        if command is None:
+            self.assertIsNone(source)
+            return
+        lines = source.splitlines()
+        self.assertEqual(len(lines), 4)
+        self.assertEqual(lines[0], '// @exec: {"max_output_tokens": 16384}')
+        prefix, suffix = "const { output, ...metadata } = await tools.exec_command(", ");"
+        self.assertTrue(lines[1].startswith(prefix) and lines[1].endswith(suffix))
+        arguments = json.loads(lines[1][len(prefix):-len(suffix)])
+        self.assertEqual(arguments, {"cmd": command, "max_output_tokens": 16384})
+        self.assertEqual(lines[2:], ["text(metadata);", "text(output);"])
 
     def hook(self, phase, call, request, response=None, name="webrun", **overrides):
         event = {"hook_event_name": phase, "tool_name": name, "tool_use_id": call,
@@ -1001,6 +1017,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
         self.assertEqual(value["status"], "emitted")
+        if "next_functions_exec_source" in value:
+            self.assert_reader_call_source(value["next_functions_exec_source"], value["next_command"])
         if match:
             self.assertEqual(self.hook("PostToolUse", call, request, result.stdout, name="Bash"), {})
         return value, result.stdout
@@ -1120,6 +1138,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(status["unmet"], ["latest_native_reader_match"])
         self.assertEqual(status["latest_readback"], emitted["receipt_id"])
         self.assertEqual(status["readback_command"], activation["readback_command"])
+        self.assert_reader_call_source(status["next_readback_functions_exec_source"], status["next_readback_command"])
         self.assertIn("No native response match", status["reader_recovery"])
         self.assertIn("not a normal-close prerequisite", status["semantic_review_note"])
         before = self.inventory()
@@ -1148,6 +1167,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.hook("PostToolUse", "unmatched", wrong_request, json.dumps(emitted), name="Bash"), {})
         matched = self.native_readback(activation, "reader-one")
         self.assertTrue(self.invoke("check")["ready_to_close"])
+        self.assertIsNone(self.invoke("check")["next_readback_functions_exec_source"])
         old_receipt = (self.directory() / ("readback-" + matched["receipt_id"] + ".json")).read_bytes()
         self.report.write_text("Source/access table: corrected locator and actual four-attempt budget.\n", encoding="utf-8")
         self.assertEqual(self.invoke("check")["status"], "stale")
@@ -1307,7 +1327,8 @@ class EvidenceTests(unittest.TestCase):
         emitted = self.invoke("sources")
         emitted_bundle = json.loads(emitted["page"]["text"])
         capture = emitted_bundle["capture"]
-        self.assertEqual(set(emitted), {"status", "reader", "receipt_id", "generation", "page", "next_command"})
+        self.assertEqual(set(emitted), {"status", "reader", "receipt_id", "generation", "page", "next_command",
+                                        "next_functions_exec_source"})
         self.assertEqual(set(capture), {"id", "request", "captured_at", "receipts", "returned_text"})
         self.assertEqual(emitted_bundle["record_reference"], "source:" + capture["id"])
         self.assertEqual(capture["request"], request)
@@ -1505,9 +1526,12 @@ class EvidenceTests(unittest.TestCase):
         wrong_receipt["receipt_id"] = "0" * 64
         wrong_index = json.loads(output)
         wrong_index["page"]["index"] = 1
+        wrong_template = json.loads(output)
+        wrong_template["next_functions_exec_source"] += "\ntext('extra output');"
         for index, bad in enumerate(("Warning: truncated output\n" + output, output[:100],
                                      {"stdout": output}, json.dumps(altered), json.dumps(wrong_receipt),
-                                     json.dumps(wrong_index), output.replace('"status":', '"status":"emitted","status":', 1))):
+                                     json.dumps(wrong_index), json.dumps(wrong_template),
+                                     output.replace('"status":', '"status":"emitted","status":', 1))):
             call = "bad-page-" + str(index)
             request = {"command": activation["readback_command"]}
             self.hook("PreToolUse", call, request, name="Bash")
@@ -1550,6 +1574,8 @@ class EvidenceTests(unittest.TestCase):
         self.invoke("close", expected=2)
         self.assertEqual(status["reader_progress"]["matched_pages"], 1)
         self.assertEqual(status["next_command"], first["next_command"])
+        self.assert_reader_call_source(status["next_functions_exec_source"], first["next_command"])
+        self.assertEqual(status["next_functions_exec_source"], first["next_functions_exec_source"])
         source_post = next(self.directory().glob("web-*-post.json"))
         original = source_post.read_bytes()
         changed = json.loads(original)
@@ -1681,6 +1707,41 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.inventory(), before)
         self.assertEqual(self.last_evidence_stdout, "")
 
+    def test_reader_call_source_preserves_quoted_commands_without_javascript_interpolation(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("reader_call_test", RUNNER)
+        reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(reader)
+        for command in ("& 'C:\\project café''s files\\reader.py' --value '$() ` ${name}'",
+                        "'/tmp/café'\"'\"'s files/reader.py' --value '\" \\ $() ` ${name}'\n\u2028\u2029"):
+            self.assert_reader_call_source(reader.evidence_reader_call_source(command), command)
+
+    def test_previous_paged_generation_preserves_original_frames_and_native_matches(self):
+        self.report.write_text("Historical paged evidence.\n" * 900, encoding="utf-8")
+        activation = self.activate()
+        session_path = self.directory() / "session.json"
+        envelope = json.loads(session_path.read_text(encoding="utf-8"))
+        del envelope["value"]["activations"][-1]["reader_call_template"]
+        envelope["sha256"] = hashlib.sha256(json.dumps(envelope["value"], sort_keys=True, separators=(",", ":"),
+                                                      ensure_ascii=False).encode("utf-8")).hexdigest()
+        session_path.write_text(json.dumps(envelope), encoding="utf-8")
+        # Synthetic prior-generation shape; native calls still use real saved pages.
+        first, _ = self.native_page(activation["readback_command"], "prior-zero")
+        self.assertEqual(set(first), {"status", "reader", "receipt_id", "generation", "page", "next_command"})
+        self.assertGreater(first["page"]["count"], 1)
+        literal = first["next_command"]
+        index = 1
+        while literal:
+            frame, _ = self.native_page(literal, "prior-" + str(index))
+            self.assertNotIn("next_functions_exec_source", frame)
+            literal = frame["next_command"]
+            index += 1
+        before = self.inventory()
+        self.assertTrue(self.invoke("check")["ready_to_close"])
+        self.assertEqual(self.inventory(), before)
+        self.invoke("close")
+
     def test_legacy_reader_match_is_preserved_without_migration_or_current_credit(self):
         activation = self.activate()
         first = self.invoke("readback")
@@ -1688,7 +1749,7 @@ class EvidenceTests(unittest.TestCase):
         session_path = self.directory() / "session.json"
         session = json.loads(session_path.read_text(encoding="utf-8"))["value"]
         old = session["activations"][-1]
-        del old["reader_transport"], old["latest_sources"]
+        del old["reader_transport"], old["latest_sources"], old["reader_call_template"]
         old["handler_sha256"] = "0" * 64
 
         def sha(value):

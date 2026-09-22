@@ -1148,6 +1148,15 @@ def evidence_output(value: dict) -> bytes:
     return canonical(value) + b"\n"
 
 
+def evidence_reader_call_source(command: str | None) -> str | None:
+    if command is None:
+        return None
+    arguments = json.dumps({"cmd": command, "max_output_tokens": 16384})
+    return ('// @exec: {"max_output_tokens": 16384}\n'
+            f'const {{ output, ...metadata }} = await tools.exec_command({arguments});\n'
+            'text(metadata);\ntext(output);')
+
+
 def evidence_reader_command(activation: dict, reader: str, receipt_id: str, index: int) -> str:
     return activation[reader + "_command"] + f" --receipt {receipt_id} --page {index}"
 
@@ -1181,10 +1190,14 @@ def evidence_reader_bundle(directory: Path, activation: dict, reader: str, recei
 
 def evidence_reader_frame(activation: dict, reader: str, receipt_id: str, page: dict,
                           next_index: int | None) -> dict:
-    return {"status": "emitted", "reader": reader, "receipt_id": receipt_id,
-            "generation": activation["id"], "page": page,
-            "next_command": evidence_reader_command(activation, reader, receipt_id, next_index)
-                            if next_index is not None else None}
+    frame = {"status": "emitted", "reader": reader, "receipt_id": receipt_id,
+             "generation": activation["id"], "page": page,
+             "next_command": evidence_reader_command(activation, reader, receipt_id, next_index)
+                             if next_index is not None else None}
+    # Old generations must reproduce their original frame bytes and page sizes.
+    if activation.get("reader_call_template") == "functions-exec-v1":
+        frame["next_functions_exec_source"] = evidence_reader_call_source(frame["next_command"])
+    return frame
 
 
 def evidence_reader_pages(activation: dict, reader: str, receipt_id: str, bundle: dict) -> list[dict]:
@@ -1272,8 +1285,9 @@ def evidence_reader_progress(directory: Path, activation: dict, reader: str, rec
     present = {match["index"] for match in matches}
     # A complete set without its aggregate can be repaired by an explicit local reread.
     next_index = next((index for index in range(len(frames)) if index not in present), 0)
-    return {"matched_pages": len(matches), "total_pages": len(frames),
-            "next_command": evidence_reader_command(activation, reader, receipt_id, next_index)}
+    command = evidence_reader_command(activation, reader, receipt_id, next_index)
+    return {"matched_pages": len(matches), "total_pages": len(frames), "next_command": command,
+            "next_functions_exec_source": evidence_reader_call_source(command)}
 
 
 def evidence_write(path: Path, value: dict, *, immutable: bool = False) -> None:
@@ -1303,7 +1317,12 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
             fields |= {"record", "sources_command"}
         if isinstance(item, dict) and "reader_transport" in item:
             fields |= {"reader_transport", "latest_sources"}
+        if isinstance(item, dict) and "reader_call_template" in item:
+            fields.add("reader_call_template")
         exact_keys(item, fields, "evidence activation")
+        if "reader_call_template" in item and (item["reader_call_template"] != "functions-exec-v1"
+                or item.get("reader_transport") != "pages-v1"):
+            raise ResearchError("Invalid reader call template binding")
         if "reader_transport" in item and (item["reader_transport"] != "pages-v1"
                 or (item["latest_sources"] is not None and not re.fullmatch(r"[0-9a-f]{64}", str(item["latest_sources"])))):
             raise ResearchError("Invalid reader transport binding")
@@ -1424,7 +1443,8 @@ def evidence_native_match(directory: Path, activation: dict, receipt_id: str, re
 
 
 def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[dict, list]:
-    result = {"ready": True, "pending_reads": [], "missing_record_refs": [], "next_command": None}
+    result = {"ready": True, "pending_reads": [], "missing_record_refs": [], "next_command": None,
+              "next_functions_exec_source": None}
     if not activation["public_web"]:
         return result, []
     if "record" not in activation:
@@ -1466,6 +1486,7 @@ def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[
             if bundle.get("capture") == pending[0]:
                 result["reader_progress"] = evidence_reader_progress(directory, activation, "sources", receipt_id, bundle)
                 result["next_command"] = result["reader_progress"]["next_command"]
+        result["next_functions_exec_source"] = evidence_reader_call_source(result["next_command"])
     record_references = set(SOURCE_RECORD_REFERENCE.findall(text))
     result["missing_record_refs"] = [ref["path"] for capture in captures for ref in capture["receipts"]
                                      if capture["id"] not in record_references and ref["path"] not in text]
@@ -1514,7 +1535,9 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
               "semantic_review_note": "False is expected: semantic judgment is outside machine proof and is not a normal-close prerequisite.",
               "latest_readback": activation["latest_readback"], "readback_command": activation["readback_command"],
               "next_readback_command": activation["readback_command"],
-              "sources_command": activation.get("sources_command"), "reader_output_hint": READER_OUTPUT_HINT}
+              "sources_command": activation.get("sources_command"), "reader_output_hint": READER_OUTPUT_HINT,
+              "readback_functions_exec_source": evidence_reader_call_source(activation["readback_command"]),
+              "sources_functions_exec_source": evidence_reader_call_source(activation.get("sources_command"))}
     try:
         result["sources"], _ = evidence_sources(project, directory, activation)
         snapshot = evidence_snapshot(project, storage, directory, activation)
@@ -1553,6 +1576,7 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
         result["reader_recovery"] = ("No native response match is recorded for the latest readback. "
                                      "Run next_readback_command alone in a separate native call with complete output, "
                                      "inspect every page, then check or close separately.")
+    result["next_readback_functions_exec_source"] = evidence_reader_call_source(result["next_readback_command"])
     return result
 
 
@@ -1592,7 +1616,8 @@ def evidence_action(args: argparse.Namespace) -> dict:
                                                      if os.name == "nt" else shlex.join(argv))
                 activation = {**boundary, **commands, "id": uuid.uuid4().hex, "state": "active",
                               "opened_at": utc_now(), "closed_at": None, "reason": None, "latest_readback": None,
-                              "reader_transport": "pages-v1", "latest_sources": None}
+                              "reader_transport": "pages-v1", "latest_sources": None,
+                              "reader_call_template": "functions-exec-v1"}
                 state = state or {"schema_version": 1, "project": str(project), "session_id": session_id,
                                   "owner_thread_id": session_id, "activations": []}
                 state["activations"].append(activation)
@@ -1601,7 +1626,9 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     "readback_command": activation["readback_command"], "artifacts": activation["artifacts"],
                     "sources_command": activation.get("sources_command"), "record": activation.get("record"),
                     "evidence_directory": str(directory.relative_to(project)), "semantic_review_verified": False,
-                    "reader_output_hint": READER_OUTPUT_HINT}
+                    "reader_output_hint": READER_OUTPUT_HINT,
+                    "readback_functions_exec_source": evidence_reader_call_source(activation["readback_command"]),
+                    "sources_functions_exec_source": evidence_reader_call_source(activation.get("sources_command"))}
         if args.operation == "close" and bool(args.incomplete) != bool(args.reason and args.reason.strip()):
             raise ResearchError("Incomplete close requires --incomplete and a nonempty --reason together")
         if activation["state"] == "closed":
@@ -1822,7 +1849,10 @@ def evidence_hook() -> dict:
                     failure_stage = "reader_response_json"
                     returned = json.loads(response, parse_constant=reject_constant, object_pairs_hook=unique_json_object)
                     failure_stage = "reader_response_schema"
-                    exact_keys(returned, {"status", "reader", "receipt_id", "generation", "page", "next_command"}, "reader return")
+                    frame_fields = {"status", "reader", "receipt_id", "generation", "page", "next_command"}
+                    if activation.get("reader_call_template") == "functions-exec-v1":
+                        frame_fields.add("next_functions_exec_source")
+                    exact_keys(returned, frame_fields, "reader return")
                     exact_keys(returned["page"], {"index", "count", "offset", "total_bytes", "text"}, "reader page")
                     receipt_id = returned["receipt_id"]
                     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
