@@ -851,6 +851,24 @@ def extract_source(storage: Path, directory: Path) -> Path:
     return source
 
 
+def bounded_process_output(value: bytes | str | None, limit: int = 4096) -> dict:
+    """Return bounded display text plus an exact digest of subprocess output."""
+    if value is None:
+        raw = b""
+    elif isinstance(value, bytes):
+        raw = value
+    else:
+        raw = value.encode("utf-8", errors="replace")
+    displayed = raw[:limit]
+    return {
+        "text": displayed.decode("utf-8", errors="replace"),
+        "displayed_bytes": len(displayed),
+        "total_bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "truncated": len(raw) > limit,
+    }
+
+
 def stop_owned_process(process: subprocess.Popen) -> dict:
     """Record observed cleanup actions; detached descendants cannot be certified."""
     detail = {"attempted": False, "method": "none", "scope": "owned direct child",
@@ -862,8 +880,30 @@ def stop_owned_process(process: subprocess.Popen) -> dict:
     try:
         if os.name == "nt":
             detail.update(method="taskkill /T /F", scope="OS-requested process tree")
-            result = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                                    shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+            try:
+                result = subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                        shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+            except subprocess.TimeoutExpired as exc:
+                detail["taskkill"] = {
+                    "status": "timed_out",
+                    "timeout_seconds": 5,
+                    "stdout": bounded_process_output(exc.output),
+                    "stderr": bounded_process_output(exc.stderr),
+                }
+                raise
+            except OSError as exc:
+                detail["taskkill"] = {
+                    "status": "launch_error",
+                    "error_type": type(exc).__name__,
+                    "error": bounded_process_output(str(exc), limit=2048),
+                }
+                raise
+            detail["taskkill"] = {
+                "status": "completed",
+                "returncode": result.returncode,
+                "stdout": bounded_process_output(result.stdout),
+                "stderr": bounded_process_output(result.stderr),
+            }
             detail["signal_succeeded"] = result.returncode == 0
             if result.returncode and process.poll() is None:
                 process.kill()

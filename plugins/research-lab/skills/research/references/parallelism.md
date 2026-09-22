@@ -74,6 +74,37 @@ complete encoded suffix, including separators, fits the remaining space. A faile
 write may leave bytes behind: inspect current content and preserve those bytes as
 history. Never truncate or restore an earlier prefix to fit a limit; retain an
 incomplete result if a valid correction cannot fit.
+
+For a pre-existing append-only note, do not use a line-oriented patch, `Set-Content`,
+`WriteAllText`, or another decode-and-rewrite operation: it can normalize existing
+newline bytes. Use a binary append. Immediately before writing, require the current
+byte length and SHA-256 to equal the values observed after the last read; otherwise
+refuse without writing. With the designated single writer, open in binary append
+mode, write only the complete UTF-8 suffix, flush and close, then verify that the
+saved bytes equal the exact old prefix followed by the exact suffix. This compact
+standard-library pattern is an executable control; fill the four inputs from the
+current task rather than copying illustrative values:
+
+```python
+import hashlib, os
+from pathlib import Path
+
+path = Path(os.environ["APPEND_PATH"])
+expected_length = int(os.environ["APPEND_EXPECTED_LENGTH"])
+expected_sha256 = os.environ["APPEND_EXPECTED_SHA256"].lower()
+suffix = os.environ["APPEND_SUFFIX"].encode("utf-8")
+old = path.read_bytes()
+if len(old) != expected_length or hashlib.sha256(old).hexdigest() != expected_sha256:
+    raise SystemExit("stale append precondition; no bytes written")
+with path.open("ab") as stream:
+    stream.write(suffix)
+    stream.flush()
+    os.fsync(stream.fileno())
+saved = path.read_bytes()
+if saved[:expected_length] != old or saved[expected_length:] != suffix:
+    raise SystemExit("append verification failed; preserve current bytes as history")
+```
+
 Use one writer for the shared
 decision body, which may be revised subject to renewed review below; avoid
 unnecessary new records.

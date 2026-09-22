@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "examples"))
@@ -1815,6 +1816,89 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.invoke("close", expected=2)["evidence"], changed)
         self.assertEqual(self.inventory(), closed_inventory)
         self.assertFalse((self.project / ".research/launches.json").exists())
+
+
+class FakeProcess:
+    pid = 4321
+
+    def __init__(self):
+        self.returncode = None
+        self.killed = False
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+    def wait(self, timeout):
+        if self.returncode is None:
+            self.returncode = 0
+        return self.returncode
+
+
+class CleanupObservabilityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cleanup_observability_runner", RUNNER)
+        cls.runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.runner)
+
+    def call(self, run_result):
+        process = FakeProcess()
+        behavior = ({"side_effect": run_result} if isinstance(run_result, BaseException)
+                    else {"return_value": run_result})
+        with mock.patch.object(self.runner.os, "name", "nt"), \
+                mock.patch.object(self.runner.subprocess, "run", **behavior) as invoked:
+            detail = self.runner.stop_owned_process(process)
+        self.assertEqual(invoked.call_args.args[0], ["taskkill", "/PID", "4321", "/T", "/F"])
+        return process, detail
+
+    def test_success_retains_bounded_diagnostics_and_keeps_descendants_unknown(self):
+        stdout = b"SUCCESS: process tree terminated\r\n" + b"x" * 5000
+        process, detail = self.call(subprocess.CompletedProcess([], 0, stdout, b""))
+        self.assertFalse(process.killed)
+        self.assertTrue(detail["direct_child_reaped"])
+        self.assertTrue(detail["signal_succeeded"])
+        self.assertEqual(detail["scope"], "OS-requested process tree")
+        self.assertEqual(detail["descendant_state"], "unknown")
+        self.assertEqual(detail["taskkill"]["status"], "completed")
+        self.assertEqual(detail["taskkill"]["returncode"], 0)
+        self.assertEqual(detail["taskkill"]["stdout"]["sha256"], hashlib.sha256(stdout).hexdigest())
+        self.assertEqual(detail["taskkill"]["stdout"]["total_bytes"], len(stdout))
+        self.assertEqual(detail["taskkill"]["stdout"]["displayed_bytes"], 4096)
+        self.assertTrue(detail["taskkill"]["stdout"]["truncated"])
+
+    def test_failure_retains_stderr_and_keeps_descendants_unknown(self):
+        stderr = b"ERROR: Access is denied.\r\n"
+        process, detail = self.call(subprocess.CompletedProcess([], 5, b"", stderr))
+        self.assertTrue(process.killed)
+        self.assertEqual(detail["taskkill"]["returncode"], 5)
+        self.assertEqual(detail["taskkill"]["stderr"]["text"], stderr.decode())
+        self.assertTrue(detail["direct_child_kill_fallback"])
+        self.assertTrue(detail["direct_child_reaped"])
+        self.assertEqual(detail["descendant_state"], "unknown")
+
+    def test_timeout_retains_partial_streams_and_keeps_descendants_unknown(self):
+        timeout = subprocess.TimeoutExpired("taskkill", 5, output=b"partial out", stderr=b"partial err")
+        process, detail = self.call(timeout)
+        self.assertTrue(process.killed)
+        self.assertEqual(detail["taskkill"]["status"], "timed_out")
+        self.assertEqual(detail["taskkill"]["stdout"]["text"], "partial out")
+        self.assertEqual(detail["taskkill"]["stderr"]["text"], "partial err")
+        self.assertTrue(detail["direct_child_reaped"])
+        self.assertEqual(detail["descendant_state"], "unknown")
+
+    def test_launch_error_is_bounded_and_keeps_descendants_unknown(self):
+        process, detail = self.call(OSError("taskkill unavailable"))
+        self.assertTrue(process.killed)
+        self.assertEqual(detail["taskkill"]["status"], "launch_error")
+        self.assertEqual(detail["taskkill"]["error_type"], "OSError")
+        self.assertEqual(detail["taskkill"]["error"]["text"], "taskkill unavailable")
+        self.assertTrue(detail["direct_child_reaped"])
+        self.assertEqual(detail["descendant_state"], "unknown")
 
 
 if __name__ == "__main__":
