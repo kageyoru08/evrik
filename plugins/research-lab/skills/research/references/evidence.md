@@ -80,6 +80,11 @@ For a token-based limit, request at least 16,384 output tokens when supported;
 bytes and tokens are different units, so this conservative allowance is not
 a delivery guarantee. Output budgets can be capped by the native platform, so
 a larger request does not guarantee complete delivery.
+When a reader call uses `functions.exec`, put the first-line directive
+`// @exec: {"max_output_tokens": 16384}` on that wrapper and also set
+`max_output_tokens` to at least 16384 on the nested native execution call.
+The nested setting does not raise the wrapper's default. Apply both settings
+to every initial, continuation and correction page, and expose the full result.
 The helper reads every declared small UTF-8 file and saves an
 immutable bundle under `.research/evidence/`. Missing, unsafe, oversized or
 non-text artifacts are incomplete; no heading filter or silent truncation
