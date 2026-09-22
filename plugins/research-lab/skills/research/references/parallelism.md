@@ -11,12 +11,27 @@ claiming that a meeting occurred.
 
 Settle the question, hard constraints, available evidence and access, actual
 participants and addresses, file ownership, decision rule, and finite limits
-before exchanging conclusions. Choose the smallest useful roster and budget
-for the question. Apply the [multiagent model rule](../SKILL.md#tools-ownership-and-authorization)
-to every meeting participant, including the facilitator. No particular connector,
-external consultation or Pro skill is required.
-Bound participants, activations, messages, tools, evaluations and time as
-applicable. Reserve capacity for final review and one revision.
+before exchanging conclusions. Apply the [multiagent model rule](../SKILL.md#tools-ownership-and-authorization)
+to every participant, including the facilitator: the roster must contain both
+Sol and Astra. Two participants means the facilitator and one peer, one from
+each family. Choose the smallest roster that covers the question's difficulty,
+independent subproblems and material uncertainties. Add a participant only for
+distinct useful analysis or verification, not to fill capacity or multiply votes.
+Choose supported effort per role: bounded routine checks may need low or medium
+effort; difficult reasoning, ambiguous evidence or consequential verification
+can justify higher effort. Briefly record the role, family and effort choices
+and why the headcount fits the task in the existing initial packet. Verify
+actual selection receipts before relying on the roster; prompts alone do not
+select a model. No particular connector, external consultation or Pro skill is
+required. Bound participants, activations, messages, tools, evaluations and time
+as applicable. Reserve capacity for final review and one revision.
+
+[Stellar Colosseum, section 6](https://arxiv.org/html/2609.15983v2#S6)
+reports complementary errors and improved critique-based selection between two
+model runs on TCS-Bench. This motivates family diversity; it does not establish
+independent errors or an accuracy gain for Sol/Astra meetings. Preserve evidence,
+objections and task-specific verification instead of treating model diversity
+or agreement as proof of correctness.
 
 Start independent work when its inputs and native capacity are ready. Check
 shared writes, tools and evaluation budgets as well as data dependencies. Review

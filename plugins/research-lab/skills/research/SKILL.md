@@ -252,11 +252,18 @@ skill. Solo work has no model-family restriction. In any multiagent delegation
 or meeting, every participant, including coordinators, facilitators, workers and
 critics, must use the latest version of Sol or Astra, verified against the current
 native model inventory and current official model information where needed.
-Do not rely on remembered versions or label sorting. Select an eligible available
-model and effort through supported native controls according to task risk,
-capability needs and cost; mixed families are not required. If a family's latest
-version cannot be established or is unavailable, use the other family only if its
-latest is verified and available; never silently fall back to an older version.
+Do not rely on remembered versions or label sorting. Select eligible models and
+supported effort through native controls according to each participant's task
+difficulty, uncertainty, risk and cost. Every discussion or peer meeting must
+include both Sol and Astra, counting the coordinator or facilitator as a
+participant. A two-person discussion uses one of each; a larger roster retains
+both families and adds only independently useful roles. Size the roster and
+effort for the actual work within native capacity and the shared budget.
+If either family's latest version cannot be verified or is unavailable, retain
+the missing-family limitation and continue useful independent authorized work;
+do not present a single-family discussion as compliant or silently use an older
+version. Ordinary independent delegation may use either verified available
+family, but must not be used to relabel a discussion or joint decision.
 A successful supported native model-selection call and returned participant
 identity establish the configured choice, not backend model attestation. An
 already-selected participant, including a coordinator, may use a parent/host's
