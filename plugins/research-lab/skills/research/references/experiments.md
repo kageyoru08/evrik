@@ -95,6 +95,11 @@ the launch ledger, source history and actual command completions from both
 coordinator and workers. Enumerate the required preparations, claims and
 unused reserves, source/archive/result/log identities, statuses and exits.
 Retain relevant command failures, including wrapper and parser failures.
+When forwarding a command result, retain its returned status, exit code,
+execution/session or chunk identity and output, rather than output alone.
+Each worker carries failed-command evidence into its response; the final
+checkpoint retains the action, participant, actual exit and precise evidence
+correlation. A spawn receipt identifies a worker, not a failed command.
 A directory link or separate report does not supply fields that the protocol
 requires in the checkpoint. Obtain missing worker execution accounting
 before closure, or explicitly retain its unavailability as a limitation.

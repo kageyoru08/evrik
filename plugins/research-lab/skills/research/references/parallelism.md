@@ -60,7 +60,12 @@ Prefer one compact, identified initial task packet in the coordinator's existing
 note, with the common question and evidence, allowed work area, excluded
 operations, each peer's file ownership and remaining shared limits. Include
 available native selection receipts, without the facilitator's preliminary
-answer. Send a pointer to avoid duplicate copies; verify actual recipient
+answer. Publish a pointer only after saving and reading the packet. Compute its
+length and SHA-256 from the saved bytes (for example, `Path.read_bytes()`),
+not an in-memory string or newline-normalized text. Bind those exact bytes
+to the configured roster. Before dependent work, each peer verifies that
+the packet it read matches that current association; a mismatch requires
+correction and verification before work resumes. Verify actual recipient
 read/response as below. Read-only actions still have to satisfy these boundaries.
 Include applicable entry prerequisites, their order and known resolved guidance paths.
 Peers must finish required guidance in bounded reads before dependent scientific
@@ -130,8 +135,8 @@ assume that sending a message wakes an idle peer.
 Prefer direct peer messages for evidence-specific questions, objections and
 responses. Before dispatch, save the complete material question, objection or
 response in the author's existing note with its evidence reference and an identity that
-later appends preserve. Send the exact text or a pointer to that identified
-content. Administrative notices need no duplicate substantive record. When using
+later appends preserve. Complete and verify this save before dispatching the exact text or its
+identified pointer; do not run dependent save and send operations in parallel. Administrative notices need no duplicate substantive record. When using
 facilitator relay, record the workflow reason and any observed native limitation;
 keep unknown availability unknown. Carry the complete attributed content or its
 pointer and label the route as relay. The facilitator must not select or paraphrase away
