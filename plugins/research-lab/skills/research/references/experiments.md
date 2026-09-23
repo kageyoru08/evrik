@@ -90,6 +90,15 @@ state in the final checkpoint, including unresolved work, and close the
 evidence session after its final saved-content review. See the evidence
 reference for the exact reader, freshness checks and unavailable-route limits.
 
+Before final review, reconcile the checkpoint with prepared-run records,
+the launch ledger, source history and actual command completions from both
+coordinator and workers. Enumerate the required preparations, claims and
+unused reserves, source/archive/result/log identities, statuses and exits.
+Retain relevant command failures, including wrapper and parser failures.
+A directory link or separate report does not supply fields that the protocol
+requires in the checkpoint. Obtain missing worker execution accounting
+before closure, or explicitly retain its unavailability as a limitation.
+
 Repeat `--unit` to apply one explicit disposition to adjacent units. Use
 `context` for background, `completed` for completed work supported by cited
 evidence in the rationale, `unresolved` or `unsupported` for remaining
@@ -165,6 +174,14 @@ The snapshot has no Git repository. The runner adds an explanatory `.git` bounda
 ```
 
 The primary metric must be present, and all values in `metrics` must be finite numbers. Treat missing or malformed results as invalid evidence even if the process returned zero. Run timeouts and failures remain part of the record. Integer-only arithmetic stays exact; floating-point comparisons use Python's binary floating-point arithmetic with no implicit tolerance. Mixed integer/float comparisons reject integers that are not exactly float-representable, and nonfinite arithmetic is rejected.
+
+When a protocol requires an exact nonzero process exit, preserve it through
+the execution wrapper. PowerShell `-Command` can turn a native nonzero exit
+into shell exit 1; use the authorized command followed immediately by
+`exit $LASTEXITCODE`, or an existing subprocess interface that returns the
+child status directly. Record child and wrapper statuses separately. A
+printed `exit_code` field does not independently prove process exit, and
+a wrapper mismatch does not authorize repeating a scientific operation.
 
 Duplicate JSON object keys are rejected in results and research metadata. Do not choose one of two conflicting values or rewrite an ambiguous result into valid evidence.
 

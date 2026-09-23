@@ -40,6 +40,15 @@ only where the decision needs it. Use ordinary code for exact counting and
 deduplication, retaining failed or missing contributions. Final joint adoption
 still requires the complete roster's review of the same decision.
 
+Keep the shared question and initial packet stable during the independent
+first round. Participants may compute in parallel and preserve their initial
+positions in their own notes; wait for that round to finish before changing
+the shared discussion body. For each later review, keep the cited body fixed
+until the invited participant has responded. Before an attributed append,
+check the shared body against the version actually read as well as the
+author's own note prefix. If either changed, read the changed body completely
+and reassess the contribution; refreshing its hash alone is not a read.
+
 The facilitator is an equal substantive participant and the administrative
 record keeper. It saves its own initial judgment and accepts criticism. It
 cannot filter objections, overwrite another position, remove a dissenter,

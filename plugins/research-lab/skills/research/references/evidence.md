@@ -24,6 +24,16 @@ the native session and thread IDs from its two named runtime values; missing
 identity is not repaired by inventing an ID. Initial support is the activated
 root actor. Worker capture and other tool routes are not implied.
 
+Before activation, enumerate every project-relative text artifact required
+for final review, including the shared decision, participant responses and
+any additional API or refusal ledger. Declare those paths with repeated
+`--artifact` options even if the files will be written later. `--experiment`
+attaches runner state; it does not discover arbitrary collaboration files.
+An active session cannot change its artifact scope. If required scope grows,
+preserve and close the existing session honestly, then explicitly activate
+the complete new scope and perform a fresh complete readback. Retain any
+earlier incomplete result; a narrower close does not cover omitted files.
+
 Activation records intent and exact deliverable paths. Native hooks must also
 be discovered, enabled and trusted through Codex's `/hooks` interface. They
 do not change host permissions or trust themselves. A registered hook can
