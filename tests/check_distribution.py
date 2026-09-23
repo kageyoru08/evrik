@@ -43,7 +43,7 @@ BASELINE = "37bf04427c14c204450cd56576852573cab360b7"
 MARKETPLACE = ".agents/plugins/marketplace.json"
 REPO_FILES = {PLUGIN + name for name in PLUGIN_FILES} | {
     MARKETPLACE, ".gitattributes", ".gitignore", ".github/workflows/ci.yml",
-    "README.md", "BEHAVIOR.md", "LICENSE", "examples/run_demo.py",
+    "README.md", "BEHAVIOR.md", "MATURITY.md", "LICENSE", "examples/run_demo.py",
     "examples/small-regression/.gitignore", "examples/small-regression/data.json",
     "examples/small-regression/evaluate.py", "examples/small-regression/model.json",
     "tests/test_research.py", "tests/check_distribution.py", "tests/fault_driver.py",

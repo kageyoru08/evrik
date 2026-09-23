@@ -95,6 +95,8 @@ python -m unittest discover -s tests -v
 
 See [native agent behavior validation](BEHAVIOR.md) for the observed use of the installed plugin in a separate Codex task, beyond the scripted example and runner tests.
 
+See [release qualification](MATURITY.md) for the qualified payload, current Astra/Sol observations, retained evidence limits, and verification of a public revision.
+
 ## Use the runner directly
 
 From this repository, inspect its commands with:
