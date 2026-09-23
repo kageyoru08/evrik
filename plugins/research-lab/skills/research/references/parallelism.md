@@ -67,7 +67,17 @@ to the configured roster. Before dependent work, each peer verifies that
 the packet it read matches that current association; a mismatch requires
 correction and verification before work resumes. Verify actual recipient
 read/response as below. Read-only actions still have to satisfy these boundaries.
-Include applicable entry prerequisites, their order and known resolved guidance paths.
+Include applicable entry prerequisites in order and the exact resolved absolute
+paths to SKILL.md and required references, not only a runner path. Put command
+result handling in that initial packet so it applies from the peer's first tool,
+before it has read any guidance. With exec_command, forward the complete returned
+object: `const r = await tools.exec_command(args); text(r);`. For a fulfilled
+Promise.allSettled entry, forward `entry.value`, not just `entry.value.output`;
+promise fulfillment does not mean the command exited successfully. Preserve the
+returned exit_code, session/chunk identity and output. Use those observed fields
+in failure notes; external-only placeholders are for metadata the tool did not
+return, not metadata discarded by a wrapper. Do not guess a process exit from
+error text or invent a native item ID or timestamp.
 Peers must finish required guidance in bounded reads before dependent scientific
 operations; do not batch those operations with unread guidance. If ordinary local
 guidance output is incomplete, read its missing required passages within the
