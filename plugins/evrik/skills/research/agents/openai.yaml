@@ -1,4 +1,7 @@
 interface:
   display_name: "Evrik"
   short_description: "Research with experiments and traceable evidence"
+  icon_small: "./assets/logo-dark.png"
+  icon_large: "./assets/logo-dark.svg"
+  brand_color: "#15171C"
   default_prompt: "Use $research to investigate a question and verify the evidence in this project."

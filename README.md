@@ -1,3 +1,5 @@
+<p><img src="plugins/evrik/skills/research/assets/logo-dark.svg" width="96" height="96" alt="Evrik logo: white E on a dark background"></p>
+
 # Evrik
 
 Evrik 1.0.0 is the renamed public successor to Research Lab. The research workflow, `$research` skill, `.research/` records, and runner commands remain compatible. The plugin identifier is now `evrik@evrik` and the source lives under `plugins/evrik`.

@@ -16,6 +16,10 @@
     "longDescription": "Use native Codex agents, Git and tools to investigate questions, run committed experiments, compare valid evidence and resume from durable records.",
     "developerName": "Kageyoru",
     "category": "Productivity",
+    "brandColor": "#15171C",
+    "composerIcon": "./skills/research/assets/logo-dark.png",
+    "logo": "./skills/research/assets/logo-dark.png",
+    "logoDark": "./skills/research/assets/logo-dark.png",
     "capabilities": [],
     "defaultPrompt": "Use $research to plan and run a small reproducible experiment in this project."
   }

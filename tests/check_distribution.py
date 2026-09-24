@@ -32,13 +32,16 @@ LEGACY_NAME = "research-lab"
 LEGACY_ID = f"{LEGACY_NAME}@{LEGACY_NAME}"
 PLUGIN_ID = "evrik@evrik"
 VERSION = "1.0.0"
-PLUGIN_FILES = {
+LEGACY_PLUGIN_FILES = {
     ".codex-plugin/plugin.json", "LICENSE", "skills/research/SKILL.md",
     "skills/research/agents/openai.yaml", "skills/research/scripts/research.py",
     "skills/research/references/literature.md",
     "skills/research/references/experiments.md",
     "skills/research/references/evidence.md",
     "hooks/hooks.json", "skills/research/references/parallelism.md",
+}
+PLUGIN_FILES = LEGACY_PLUGIN_FILES | {
+    "skills/research/assets/logo-dark.png", "skills/research/assets/logo-dark.svg",
 }
 HOOK_COMMAND = 'python3 -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 HOOK_COMMAND_WINDOWS = 'python -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
@@ -92,9 +95,9 @@ def committed_files(repo, revision):
     return commit, files
 
 
-def payload(files, prefix=PLUGIN):
+def payload(files, prefix=PLUGIN, *, expected_files=PLUGIN_FILES):
     values = {name[len(prefix):]: content for name, content in files.items() if name.startswith(prefix)}
-    require(set(values) == PLUGIN_FILES, f"Unexpected plugin inventory: {sorted(set(values) ^ PLUGIN_FILES)}")
+    require(set(values) == expected_files, f"Unexpected plugin inventory: {sorted(set(values) ^ expected_files)}")
     return values
 
 
@@ -439,7 +442,7 @@ def native_checks(repo, commit, files, args, report, work):
         state("public-loaded-B", payload(files))
         return
     baseline, old_files = committed_files(repo, args.baseline)
-    old = payload(old_files, f"plugins/{LEGACY_NAME}/")
+    old = payload(old_files, f"plugins/{LEGACY_NAME}/", expected_files=LEGACY_PLUGIN_FILES)
     new = payload(files)
     require(json.loads(old[".codex-plugin/plugin.json"])["version"] == "1.0.0", "Baseline version differs")
     require(json.loads(old[".codex-plugin/plugin.json"])["name"] == LEGACY_NAME, "Baseline identity differs")

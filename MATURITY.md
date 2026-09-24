@@ -72,7 +72,7 @@ The observations do not establish a causal accuracy gain from the model pairing,
 
 ## Public acceptance and maintenance
 
-The final pre-rename public-main run [35843506721](https://github.com/kageyoru08/evrik/actions/runs/35843506721), attempt 1, completed all six jobs at `d27a243e52effcdee344a5adb03f614554bee608`. Its collected evidence contains 144 files, 104 passed fault reports and 79 tests per Windows/Ubuntu × Python 3.11/3.14 combination, with skips 1/1/2/2. Both operating systems installed the exact commit from the public origin. P01, the independent P02 public-artifact review and ROOT acceptance completed; a 24 September read-only audit rechecked the 35 final matrix bindings and 18 cleanup-gate bindings. The four accepted fresh model cases and preserved failures above keep their original attribution and scientific limits.
+The final pre-rename public-main run [35843506721](https://github.com/kageyoru08/evrik/actions/runs/35843506721), attempt 1, completed all six jobs at `d27a243e52effcdee344a5adb03f614554bee608`. Its collected evidence contains 144 files, 104 passed fault reports and 79 tests per Windows/Ubuntu Ã— Python 3.11/3.14 combination, with skips 1/1/2/2. Both operating systems installed the exact commit from the public origin. P01, the independent P02 public-artifact review and ROOT acceptance completed; a 24 September read-only audit rechecked the 35 final matrix bindings and 18 cleanup-gate bindings. The four accepted fresh model cases and preserved failures above keep their original attribution and scientific limits.
 
 Maintenance retained the complete historical evidence in a verified archive (29,845 files), copied 524 active evidence files byte for byte, and removed 73 obsolete work/cache copies. The later owned-project cleanup removed exactly 61 fixture directories (5,188 files; 17,273,432 logical bytes) and 61 project trust keys, with 20 recovery ZIPs and 5,597 archived members retained. Private configuration backups are kept outside this repository. These are logical file counts and sizes, not a claim about physical disk allocation or model cost savings.
 
@@ -86,7 +86,7 @@ The adapted native distribution check installs the exact historical package, exp
 
 The first rename candidate used 1.0.1 at `3a7f91a92431c80c6705cbf94369ba60cce84a2c`. Its [six-job CI run 36008565927](https://github.com/kageyoru08/evrik/actions/runs/36008565927) passed with 148 artifact files, 104 fault reports and 79 tests per runner combination (skips 1/1/2/2). The maintainer then selected 1.0.0. That correction changes only the manifest version within the payload. Its distribution and host-installation checks use the final version and exact commit; the unchanged runner's existing tests are reused. A manual `distribution_only` workflow input supports this bounded check without repeating the four runner jobs. Ordinary push and pull-request runs still use the full matrix. No additional model cohort is needed for the version correction.
 
-### Current payload SHA-256
+### Payload before logo adoption (85bce2a)
 
 | Path beneath `plugins/evrik` | SHA-256 |
 | --- | --- |
@@ -100,3 +100,26 @@ The first rename candidate used 1.0.1 at `3a7f91a92431c80c6705cbf94369ba60cce84a
 | `skills/research/references/parallelism.md` | `c5afc4d6d9161b010058de2d30910ae5152334195595752bf07e0f93f3efd9d7` |
 | `skills/research/scripts/research.py` | `b6a0941bdd297e52c30e9f63e382b512bbedb56ccc660a64a5159c1dcb1ec164` |
 | `skills/research/SKILL.md` | `831567ab592c1135765e278e06e5157a221a186ff852b3fd351992f6e765735c` |
+
+## Dark logo maintenance
+
+The selected logo is a manually drawn white E on a dark background, supplied as SVG and a 512 px PNG. The plugin interface, skill icons and README share these assets. The maintenance version remains 1.0.0. Relative to `85bce2a05c26da3ec8ec70e61398c9e6fe186279`, only the manifest and skill display metadata change among the ten existing payload files; two logo assets are added. The other eight files, including the runner, research instructions, references and hooks, are byte-identical.
+
+The package audit keeps the historical ten-file baseline separate from the current twelve-file inventory. Distribution checks cover the changed package and native asset metadata; accepted runner tests and research observations are reused within their existing limits. The logo does not provide new scientific or model-behavior evidence.
+
+### Current payload SHA-256
+
+| Path beneath `plugins/evrik` | SHA-256 |
+| --- | --- |
+| `.codex-plugin/plugin.json` | `53456c449dbe193bc5cfb53ef9218927ed3cecba66052f7cb9ed5db93fac5078` |
+| `LICENSE` | `bf0ba223fa49236c638a4807a856242228f631869f53993a44b582377d59b0cd` |
+| `hooks/hooks.json` | `da32979685e9d19c7c68f9574fd613d834133ef0e68197ead6645aac3a199edc` |
+| `skills/research/SKILL.md` | `831567ab592c1135765e278e06e5157a221a186ff852b3fd351992f6e765735c` |
+| `skills/research/agents/openai.yaml` | `2cc82df1686f3fa541499518b474e1a58747b5be89e4778edf5b6137e2df563f` |
+| `skills/research/assets/logo-dark.png` | `2982edad8e2f2d3ba921045c7e45af2d0edb3521a95c921822170476bacd225e` |
+| `skills/research/assets/logo-dark.svg` | `076e8bb5289253434ed245a35980c71f243cc2a8023cc51ecc2430a7f3d16d0a` |
+| `skills/research/references/evidence.md` | `d3373c590688da64d9af259d7dcc6157096503cafeae32c07186849b2a2c1f0a` |
+| `skills/research/references/experiments.md` | `633121c73ee9734ff1e9d212fec24b39932dbf203fdeb43a6817a202e8cd90eb` |
+| `skills/research/references/literature.md` | `58f7f7f1eacdf2c727346cf44b237514b1aa03cc182c90b8c1ca63debc1ee85d` |
+| `skills/research/references/parallelism.md` | `c5afc4d6d9161b010058de2d30910ae5152334195595752bf07e0f93f3efd9d7` |
+| `skills/research/scripts/research.py` | `b6a0941bdd297e52c30e9f63e382b512bbedb56ccc660a64a5159c1dcb1ec164` |
