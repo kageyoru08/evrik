@@ -1,6 +1,6 @@
 # Evrik
 
-Evrik 1.0.1 is the renamed public successor to Research Lab. The research workflow, `$research` skill, `.research/` records, and runner commands remain compatible. The plugin identifier is now `evrik@evrik` and the source lives under `plugins/evrik`.
+Evrik 1.0.0 is the renamed public successor to Research Lab. The research workflow, `$research` skill, `.research/` records, and runner commands remain compatible. The plugin identifier is now `evrik@evrik` and the source lives under `plugins/evrik`.
 
 A native Codex plugin for literature research and traceable local experiments. One skill guides the investigation; a Python runner records committed experiments and saved evidence. Opt-in native hooks capture supported public web responses and check a declared saved-content readback. Codex provides the conversation, tools, optional subagents, and artifact viewing.
 
@@ -50,7 +50,7 @@ codex plugin marketplace add kageyoru08/evrik
 codex plugin add evrik@evrik
 ```
 
-Review the newly identified hooks in `/hooks`. Existing project `.research/` evidence remains in place. Historical release tag `v1.0.0` retains its original commit and name; install the current marketplace for Evrik.
+Review the newly identified hooks in `/hooks`. Existing project `.research/` evidence remains in place. At the maintainer's request, `v1.0.0` is reissued for Evrik; the previous tag target `5966d77744030c4cdd1470588c16452d0ce78b8b` remains part of Git history. Use the exact commit and payload hashes when distinguishing the two packages.
 
 ## What is included
 

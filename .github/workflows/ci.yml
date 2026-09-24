@@ -1,9 +1,18 @@
 name: Verify
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      distribution_only:
+        description: Reuse accepted runner evidence and verify only distribution
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   test:
+    if: github.event_name != 'workflow_dispatch' || !inputs.distribution_only
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]

@@ -31,7 +31,7 @@ PLUGIN = "plugins/evrik/"
 LEGACY_NAME = "research-lab"
 LEGACY_ID = f"{LEGACY_NAME}@{LEGACY_NAME}"
 PLUGIN_ID = "evrik@evrik"
-VERSION = "1.0.1"
+VERSION = "1.0.0"
 PLUGIN_FILES = {
     ".codex-plugin/plugin.json", "LICENSE", "skills/research/SKILL.md",
     "skills/research/agents/openai.yaml", "skills/research/scripts/research.py",

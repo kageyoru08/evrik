@@ -1,6 +1,6 @@
 # Evrik release qualification and development record
 
-This record preserves the qualified research behavior and its limits across the rename from Research Lab to Evrik. The original ten plugin payload files were frozen at `9fbe661436d3b7e7819f62ee5da0485ccfc81bda`, manifest version `1.0.0`. The subsequent documentation/package release at `d27a243e52effcdee344a5adb03f614554bee608` preserved those ten hashes. Evrik 1.0.1 changes the plugin identity, metadata, paths and one snapshot marker string; it does not claim byte identity with the older payload. The authoritative installed identity is version plus exact Git commit and payload hashes; the existing release tag is not moved.
+This record preserves the qualified research behavior and its limits across the rename from Research Lab to Evrik. The original ten plugin payload files were frozen at `9fbe661436d3b7e7819f62ee5da0485ccfc81bda`, manifest version `1.0.0`. The subsequent documentation/package release at `d27a243e52effcdee344a5adb03f614554bee608` preserved those ten hashes. Evrik 1.0.0 changes the plugin identity, metadata, paths and one snapshot marker string; it does not claim byte identity with the older payload. The authoritative installed identity is version plus exact Git commit and payload hashes. The maintainer explicitly reissued `v1.0.0` for Evrik; its previous target `5966d77744030c4cdd1470588c16452d0ce78b8b` remains in Git history.
 
 The synchronous standard-library runner supports trusted foreground local Git experiments on Windows and Ubuntu with Python 3.11 and 3.14. The package supplies research guidance, exact source snapshots, conservative launch accounting, reconciliation and supported native source/evidence reading. It is not a security sandbox or durable process supervisor. Scientific acceptance remains separate from execution and evidence validity.
 
@@ -76,19 +76,21 @@ The final pre-rename public-main run [35843506721](https://github.com/kageyoru08
 
 Maintenance retained the complete historical evidence in a verified archive (29,845 files), copied 524 active evidence files byte for byte, and removed 73 obsolete work/cache copies. The later owned-project cleanup removed exactly 61 fixture directories (5,188 files; 17,273,432 logical bytes) and 61 project trust keys, with 20 recovery ZIPs and 5,597 archived members retained. Private configuration backups are kept outside this repository. These are logical file counts and sizes, not a claim about physical disk allocation or model cost savings.
 
-## Evrik 1.0.1 rename boundary
+## Evrik 1.0.0 rename boundary
 
 The current marketplace, plugin identifier, display name, repository URL and plugin directory are `evrik`, `evrik@evrik`, **Evrik**, `kageyoru08/evrik` and `plugins/evrik`. The functional skill name `research`, `.research/` data, evidence formats and `RESEARCH_*` environment contracts remain compatible. References to the former name in migration instructions, the frozen table and the test's historical baseline are intentional provenance, not active registrations.
 
-Seven payload files remain byte-identical to the accepted release. The three changed files are the manifest (name, patch version, URL and display name), skill display metadata, and the runner's human-readable snapshot marker. Runner logic, research instructions, references and hook definitions are unchanged. Existing scientific evidence therefore remains bounded evidence for those mechanisms; the rename is not a fresh model qualification or a claim that every future result will be identical.
+Seven payload files remain byte-identical to the accepted release. The three changed files are the manifest (name, URL and display name), skill display metadata, and the runner's human-readable snapshot marker. Runner logic, research instructions, references and hook definitions are unchanged. Existing scientific evidence therefore remains bounded evidence for those mechanisms; the rename is not a fresh model qualification or a claim that every future result will be identical.
 
-The adapted native distribution check installs the exact historical package, explicitly uninstalls it, removes its marketplace, installs Evrik, verifies refresh/failure retention and uninstall/reinstall, and checks that unrelated configuration, canary hooks and existing `.research/` records survive. Public-origin installation remains a separate Windows/Ubuntu gate. These checks send zero model turns and do not claim hook execution. Exact rename commit, terminal CI artifacts, host installation and cleanup receipts are bound in the external rename acceptance record. Historical tag `v1.0.0` stays fixed.
+The adapted native distribution check installs the exact historical package, explicitly uninstalls it, removes its marketplace, installs Evrik, verifies refresh/failure retention and uninstall/reinstall, and checks that unrelated configuration, canary hooks and existing `.research/` records survive. Public-origin installation remains a separate Windows/Ubuntu gate. These checks send zero model turns and do not claim hook execution. Exact rename commit, terminal CI artifacts, host installation and cleanup receipts are bound in the external rename acceptance record.
+
+The first rename candidate used 1.0.1 at `3a7f91a92431c80c6705cbf94369ba60cce84a2c`. Its [six-job CI run 36008565927](https://github.com/kageyoru08/evrik/actions/runs/36008565927) passed with 148 artifact files, 104 fault reports and 79 tests per runner combination (skips 1/1/2/2). The maintainer then selected 1.0.0. That correction changes only the manifest version within the payload. Its distribution and host-installation checks use the final version and exact commit; the unchanged runner's existing tests are reused. A manual `distribution_only` workflow input supports this bounded check without repeating the four runner jobs. Ordinary push and pull-request runs still use the full matrix. No additional model cohort is needed for the version correction.
 
 ### Current payload SHA-256
 
 | Path beneath `plugins/evrik` | SHA-256 |
 | --- | --- |
-| `.codex-plugin/plugin.json` | `2134dd3c35227e16e399950c58d4848b4c7e259702490f55392f9fb18f08c595` |
+| `.codex-plugin/plugin.json` | `ba10aa0b594a4ae34708ad30dabb2fe095d6c92e57b901a211ef56b89a6dba83` |
 | `hooks/hooks.json` | `da32979685e9d19c7c68f9574fd613d834133ef0e68197ead6645aac3a199edc` |
 | `LICENSE` | `bf0ba223fa49236c638a4807a856242228f631869f53993a44b582377d59b0cd` |
 | `skills/research/agents/openai.yaml` | `200e948b26a7109ab1eabe1d873fb73b891b5aed8017f4b97328d5c9da1a2013` |
