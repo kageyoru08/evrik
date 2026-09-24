@@ -1,4 +1,4 @@
 interface:
-  display_name: "Research Lab"
+  display_name: "Evrik"
   short_description: "Research with experiments and traceable evidence"
   default_prompt: "Use $research to investigate a question and verify the evidence in this project."

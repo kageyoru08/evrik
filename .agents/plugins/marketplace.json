@@ -1,10 +1,10 @@
 {
-  "name": "research-lab",
-  "interface": {"displayName": "Research Lab"},
+  "name": "evrik",
+  "interface": {"displayName": "Evrik"},
   "plugins": [
     {
-      "name": "research-lab",
-      "source": {"source": "local", "path": "./plugins/research-lab"},
+      "name": "evrik",
+      "source": {"source": "local", "path": "./plugins/evrik"},
       "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
       "category": "Productivity"
     }

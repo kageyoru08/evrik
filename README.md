@@ -1,21 +1,23 @@
-# Research Lab
+# Evrik
+
+Evrik 1.0.1 is the renamed public successor to Research Lab. The research workflow, `$research` skill, `.research/` records, and runner commands remain compatible. The plugin identifier is now `evrik@evrik` and the source lives under `plugins/evrik`.
 
 A native Codex plugin for literature research and traceable local experiments. One skill guides the investigation; a Python runner records committed experiments and saved evidence. Opt-in native hooks capture supported public web responses and check a declared saved-content readback. Codex provides the conversation, tools, optional subagents, and artifact viewing.
 
-Research Lab is an original implementation inspired by the experiment and evidence workflow of [OpenResearch](https://github.com/alphaXiv/OpenResearch). It has no OpenResearch runtime dependency and does not include its source code.
+Evrik is an original implementation inspired by the experiment and evidence workflow of [OpenResearch](https://github.com/alphaXiv/OpenResearch). It has no OpenResearch runtime dependency and does not include its source code.
 
 ## Install in Codex
 
 Use a Codex version with the native plugin marketplace and hook interfaces, plus Python 3.11 or newer (`python3` on POSIX, `python` on Windows). Git is needed for experiments, while literature evidence storage works without it. No additional Python packages are required. The commands below use the public repository:
 
 ```sh
-codex plugin marketplace add kageyoru08/research-lab
-codex plugin add research-lab@research-lab
+codex plugin marketplace add kageyoru08/evrik
+codex plugin add evrik@evrik
 ```
 
-Start a new Codex task after installation and review Research Lab's two hook definitions in `/hooks` before trusting them. Installation alone does not trust new or changed hooks. Invoke `$research` or select **Research Lab** in the skill picker; matching research requests may select it naturally. The skill and runner do not edit global Codex configuration or install a model provider; Codex's own trust interface persists the choices you make there.
+Start a new Codex task after installation and review Evrik's two hook definitions in `/hooks` before trusting them. Installation alone does not trust new or changed hooks. Invoke `$research` or select **Evrik** in the skill picker; matching research requests may select it naturally. The skill and runner do not edit global Codex configuration or install a model provider; Codex's own trust interface persists the choices you make there.
 
-Research Lab does not restrict the Codex CLI or desktop app to a fixed version. Compatibility depends on the native plugin, skill, tool, and hook interfaces available in that environment. CI installs the latest stable CLI and checks actual installation, refresh, loading, and preservation behavior on Windows and Ubuntu. Each report records the tested CLI version and executable hash. A version change alone does not require a plugin change; an incompatible native interface change requires an explicit adaptation and verification. Desktop behavior is verified separately through its available native tools; CLI checks alone do not establish desktop model behavior.
+Evrik does not restrict the Codex CLI or desktop app to a fixed version. Compatibility depends on the native plugin, skill, tool, and hook interfaces available in that environment. CI installs the latest stable CLI and checks actual installation, refresh, loading, and preservation behavior on Windows and Ubuntu. Each report records the tested CLI version and executable hash. A version change alone does not require a plugin change; an incompatible native interface change requires an explicit adaptation and verification. Desktop behavior is verified separately through its available native tools; CLI checks alone do not establish desktop model behavior.
 
 Example requests:
 
@@ -29,15 +31,26 @@ Example requests:
 
 ## Refresh an existing installation
 
-For an installed plugin from this Git marketplace, refresh only Research Lab:
+For an installed plugin from this Git marketplace, refresh only Evrik:
 
 ```sh
-codex plugin marketplace upgrade research-lab --json
+codex plugin marketplace upgrade evrik --json
 ```
 
 Same-version refresh has been observed on Codex CLI **0.153.4** and **0.155.1**: this command updated both the marketplace snapshot and the installed cached skill when its contents changed while the plugin version stayed **1.0.0**. These versions identify completed observations; compatibility checks use the installed CLI's actual behavior.
 
-Check that the response has no errors, then start a new Codex task and select **Research Lab**. An existing task may retain previously loaded skill instructions. For a reissue that keeps version **1.0.0**, identify the intended revision by its Git commit and compare the installed runner and skill file hashes with that commit; the version number alone cannot distinguish revisions.
+Check that the response has no errors, then start a new Codex task and select **Evrik**. An existing task may retain previously loaded skill instructions. Identify the intended revision by its Git commit and compare installed payload hashes with that commit; a version number alone cannot distinguish same-version reissues.
+
+If upgrading from the former Research Lab identity, use the explicit uninstall/install migration:
+
+```sh
+codex plugin remove research-lab@research-lab --json
+codex plugin marketplace remove research-lab --json
+codex plugin marketplace add kageyoru08/evrik
+codex plugin add evrik@evrik
+```
+
+Review the newly identified hooks in `/hooks`. Existing project `.research/` evidence remains in place. Historical release tag `v1.0.0` retains its original commit and name; install the current marketplace for Evrik.
 
 ## What is included
 
@@ -51,7 +64,7 @@ Check that the response has no errors, then start a new Codex task and select **
 
 The skill uses available native tools without requiring a connector, external consultation, or another skill. Multi-agent delegation and peer meetings use the latest verified, natively available Sol or Astra versions for every participant, including coordinators and facilitators. Discussions and peer meetings must include both families: two participants means one Sol and one Astra, counting the facilitator. Choose headcount and supported effort according to difficulty, useful independent roles, risk and the shared budget. If either family is unavailable or unverified, retain that limitation and continue useful independent work without claiming a compliant mixed meeting or silently using an older version. Delegation is optional; a subagent does not automatically receive a Git worktree. Within the authorized scope and existing native permissions, proceed without repeated user confirmation.
 
-For a requested collective decision, the [peer-meeting guidance](plugins/research-lab/skills/research/references/parallelism.md) gives participants their own initial positions, reciprocal critique and explicit review of the same saved decision. The facilitator manages the record and routing with equal substantive standing. Direct native messages are preferred; a necessary relay preserves complete attributed content and is labeled. Unresolved material objections or missing acceptance leave a provisional or blocked result. These instructions add no scheduler or service, and consensus does not prove correctness or complete defect discovery.
+For a requested collective decision, the [peer-meeting guidance](plugins/evrik/skills/research/references/parallelism.md) gives participants their own initial positions, reciprocal critique and explicit review of the same saved decision. The facilitator manages the record and routing with equal substantive standing. Direct native messages are preferred; a necessary relay preserves complete attributed content and is labeled. Unresolved material objections or missing acceptance leave a provisional or blocked result. These instructions add no scheduler or service, and consensus does not prove correctness or complete defect discovery.
 
 For supported native root sessions, declare the report/checkpoint paths with
 `evidence activate`, use `--public-web --record CHECKPOINT` for authorized public
@@ -80,9 +93,9 @@ required native check is unavailable.
 Clone the repository and run the example from its root:
 
 ```sh
-git clone https://github.com/kageyoru08/research-lab.git
-cd research-lab
-python examples/run_demo.py --workspace ../research-lab-demo
+git clone https://github.com/kageyoru08/evrik.git
+cd evrik
+python examples/run_demo.py --workspace ../evrik-demo
 ```
 
 Choose an empty or nonexistent demo directory. The example creates a tiny Git project, prepares and runs a baseline and a linear candidate, checks their comparison, and writes a report in that workspace. It uses local computation and needs no model API key. The fixture exercises bookkeeping and comparison behavior; it is not a claim about performance on real research workloads.
@@ -102,7 +115,7 @@ See [release qualification](MATURITY.md) for the qualified payload, current Astr
 From this repository, inspect its commands with:
 
 ```sh
-python plugins/research-lab/skills/research/scripts/research.py --help
+python plugins/evrik/skills/research/scripts/research.py --help
 ```
 
 When invoked by the installed skill, Codex resolves the runner from that skill's own directory. It does not depend on this repository's checkout location.
@@ -122,7 +135,7 @@ and decisions remain available, and prepared runs retain their own review
 receipts. The runner does not decide whether every relevant note was selected
 or correctly interpreted, that an absence assertion is true, or that the final
 checkpoint retains every resolution. Direct shell actions are outside this
-gate. The [experiment guidance](plugins/research-lab/skills/research/references/experiments.md)
+gate. The [experiment guidance](plugins/evrik/skills/research/references/experiments.md)
 describes commands, classifications and snapshot behavior.
 
 Old never-registered records remain readable, inspectable and comparable under
@@ -144,7 +157,7 @@ The protocol defines the evaluator command, primary metric and direction, improv
 
 JSON object keys must be unique, including inside metrics. Conflicting duplicate keys are invalid evidence; the runner does not silently choose the last value. Protocols, manifests, and the launch ledger follow the same rule.
 
-See [experiment guidance](plugins/research-lab/skills/research/references/experiments.md) for the full workflow and [the skill](plugins/research-lab/skills/research/SKILL.md) for research behavior.
+See [experiment guidance](plugins/evrik/skills/research/references/experiments.md) for the full workflow and [the skill](plugins/evrik/skills/research/SKILL.md) for research behavior.
 
 Run records live in `.research/runs/`. Preparation captures committed code through `git archive` and records declared input identities. Identical inputs and applicable reconciliation evidence return an eligible existing run record unless `--replicate` is explicitly requested; inspect its state before deciding what to do next. Each run ID permits one launch attempt, including failed or interrupted attempts. A launch claim conservatively consumes budget before process creation.
 

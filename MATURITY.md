@@ -1,12 +1,12 @@
-# Research Lab release qualification
+# Evrik release qualification and development record
 
-This record describes the qualified research behavior and its limits. The ten plugin payload files were frozen at `9fbe661436d3b7e7819f62ee5da0485ccfc81bda`, manifest version `1.0.0`. Subsequent release documentation and package-allowlist changes preserve those ten hashes. The authoritative installed identity is version plus exact Git commit and payload hashes; the existing release tag is not moved.
+This record preserves the qualified research behavior and its limits across the rename from Research Lab to Evrik. The original ten plugin payload files were frozen at `9fbe661436d3b7e7819f62ee5da0485ccfc81bda`, manifest version `1.0.0`. The subsequent documentation/package release at `d27a243e52effcdee344a5adb03f614554bee608` preserved those ten hashes. Evrik 1.0.1 changes the plugin identity, metadata, paths and one snapshot marker string; it does not claim byte identity with the older payload. The authoritative installed identity is version plus exact Git commit and payload hashes; the existing release tag is not moved.
 
 The synchronous standard-library runner supports trusted foreground local Git experiments on Windows and Ubuntu with Python 3.11 and 3.14. The package supplies research guidance, exact source snapshots, conservative launch accounting, reconciliation and supported native source/evidence reading. It is not a security sandbox or durable process supervisor. Scientific acceptance remains separate from execution and evidence validity.
 
-## Current automated verification
+## Accepted pre-rename verification
 
-CI run [35818855390](https://github.com/kageyoru08/research-lab/actions/runs/35818855390), attempt 1, reports all six jobs successful for the frozen payload commit: four runner OS/Python combinations and native distribution lifecycle checks on Windows and Ubuntu. Independent review accepted all 134 downloaded evidence files, including 104 passed fault/collision reports and 79 tests in each runner combination; one Windows skip and two Ubuntu skips are platform-specific. Development-branch public-origin steps are skipped and do not count as public release verification.
+CI run [35818855390](https://github.com/kageyoru08/evrik/actions/runs/35818855390), attempt 1, reports all six jobs successful for the frozen payload commit: four runner OS/Python combinations and native distribution lifecycle checks on Windows and Ubuntu. Independent review accepted all 134 downloaded evidence files, including 104 passed fault/collision reports and 79 tests in each runner combination; one Windows skip and two Ubuntu skips are platform-specific. Development-branch public-origin steps are skipped and do not count as public release verification.
 
 The existing configured Git marketplace was refreshed to the frozen payload commit through native CLI 0.155.1. All ten installed payload hashes match Git blobs; only the marketplace ref changed in the host configuration. A zero-turn listing observed an enabled skill, both trusted hooks, current GPT-6 Astra/Sol and supported efforts, no loader errors and normal native closure. That CI's distribution jobs used CLI 0.156.1. These are observed versions, not a claim about every CLI release.
 
@@ -30,7 +30,7 @@ STATISTICAL-BRIDGE7 completed normally in 937.186 seconds of its 1,800-second ca
 
 ## Distribution verification
 
-The final documentation/package revision receives its own six-job [Verify workflow](https://github.com/kageyoru08/research-lab/actions/workflows/ci.yml) and independent package review. Public distribution requires the main-branch run for the exact published commit to pass the `Verify published commit through the public marketplace origin` step on both Windows and Ubuntu. A successful development-branch run alone is insufficient. Final host verification binds the native Git marketplace ref and installed hashes to that same public commit. The external release record binds the resulting commit, CI artifacts, host receipts and recoverable cleanup, avoiding a self-referential commit hash in this file.
+The final documentation/package revision receives its own six-job [Verify workflow](https://github.com/kageyoru08/evrik/actions/workflows/ci.yml) and independent package review. Public distribution requires the main-branch run for the exact published commit to pass the `Verify published commit through the public marketplace origin` step on both Windows and Ubuntu. A successful development-branch run alone is insufficient. Final host verification binds the native Git marketplace ref and installed hashes to that same public commit. The external release record binds the resulting commit, CI artifacts, host receipts and recoverable cleanup, avoiding a self-referential commit hash in this file.
 
 Supported cross-platform claims cover the runner and native distribution lifecycle. The model-driven observations here ran on Windows; Ubuntu model execution is not claimed. Qualification means the declared scope and gates passed, not a universal absence of bugs.
 
@@ -55,7 +55,7 @@ Cheap source/interface and argument checks precede native model work. Targeted c
 
 The observations do not establish a causal accuracy gain from the model pairing, a controlled effort comparison or a monetary saving. Per-task native counters are descriptive and are not summed across parent/child tasks because their aggregation relation is unknown. Synthetic-case success qualifies the recorded behavior and scope, not general research accuracy.
 
-## Payload SHA-256
+## Historical frozen payload SHA-256
 
 | Path beneath `plugins/research-lab` | SHA-256 |
 | --- | --- |
@@ -69,3 +69,32 @@ The observations do not establish a causal accuracy gain from the model pairing,
 | `skills/research/references/literature.md` | `58f7f7f1eacdf2c727346cf44b237514b1aa03cc182c90b8c1ca63debc1ee85d` |
 | `skills/research/references/parallelism.md` | `c5afc4d6d9161b010058de2d30910ae5152334195595752bf07e0f93f3efd9d7` |
 | `skills/research/scripts/research.py` | `99b9347e79049a38211c1b87f61ec70868b2ab5d046dc06fddfb734429d0db14` |
+
+## Public acceptance and maintenance
+
+The final pre-rename public-main run [35843506721](https://github.com/kageyoru08/evrik/actions/runs/35843506721), attempt 1, completed all six jobs at `d27a243e52effcdee344a5adb03f614554bee608`. Its collected evidence contains 144 files, 104 passed fault reports and 79 tests per Windows/Ubuntu × Python 3.11/3.14 combination, with skips 1/1/2/2. Both operating systems installed the exact commit from the public origin. P01, the independent P02 public-artifact review and ROOT acceptance completed; a 24 September read-only audit rechecked the 35 final matrix bindings and 18 cleanup-gate bindings. The four accepted fresh model cases and preserved failures above keep their original attribution and scientific limits.
+
+Maintenance retained the complete historical evidence in a verified archive (29,845 files), copied 524 active evidence files byte for byte, and removed 73 obsolete work/cache copies. The later owned-project cleanup removed exactly 61 fixture directories (5,188 files; 17,273,432 logical bytes) and 61 project trust keys, with 20 recovery ZIPs and 5,597 archived members retained. Private configuration backups are kept outside this repository. These are logical file counts and sizes, not a claim about physical disk allocation or model cost savings.
+
+## Evrik 1.0.1 rename boundary
+
+The current marketplace, plugin identifier, display name, repository URL and plugin directory are `evrik`, `evrik@evrik`, **Evrik**, `kageyoru08/evrik` and `plugins/evrik`. The functional skill name `research`, `.research/` data, evidence formats and `RESEARCH_*` environment contracts remain compatible. References to the former name in migration instructions, the frozen table and the test's historical baseline are intentional provenance, not active registrations.
+
+Seven payload files remain byte-identical to the accepted release. The three changed files are the manifest (name, patch version, URL and display name), skill display metadata, and the runner's human-readable snapshot marker. Runner logic, research instructions, references and hook definitions are unchanged. Existing scientific evidence therefore remains bounded evidence for those mechanisms; the rename is not a fresh model qualification or a claim that every future result will be identical.
+
+The adapted native distribution check installs the exact historical package, explicitly uninstalls it, removes its marketplace, installs Evrik, verifies refresh/failure retention and uninstall/reinstall, and checks that unrelated configuration, canary hooks and existing `.research/` records survive. Public-origin installation remains a separate Windows/Ubuntu gate. These checks send zero model turns and do not claim hook execution. Exact rename commit, terminal CI artifacts, host installation and cleanup receipts are bound in the external rename acceptance record. Historical tag `v1.0.0` stays fixed.
+
+### Current payload SHA-256
+
+| Path beneath `plugins/evrik` | SHA-256 |
+| --- | --- |
+| `.codex-plugin/plugin.json` | `2134dd3c35227e16e399950c58d4848b4c7e259702490f55392f9fb18f08c595` |
+| `hooks/hooks.json` | `da32979685e9d19c7c68f9574fd613d834133ef0e68197ead6645aac3a199edc` |
+| `LICENSE` | `bf0ba223fa49236c638a4807a856242228f631869f53993a44b582377d59b0cd` |
+| `skills/research/agents/openai.yaml` | `200e948b26a7109ab1eabe1d873fb73b891b5aed8017f4b97328d5c9da1a2013` |
+| `skills/research/references/evidence.md` | `d3373c590688da64d9af259d7dcc6157096503cafeae32c07186849b2a2c1f0a` |
+| `skills/research/references/experiments.md` | `633121c73ee9734ff1e9d212fec24b39932dbf203fdeb43a6817a202e8cd90eb` |
+| `skills/research/references/literature.md` | `58f7f7f1eacdf2c727346cf44b237514b1aa03cc182c90b8c1ca63debc1ee85d` |
+| `skills/research/references/parallelism.md` | `c5afc4d6d9161b010058de2d30910ae5152334195595752bf07e0f93f3efd9d7` |
+| `skills/research/scripts/research.py` | `b6a0941bdd297e52c30e9f63e382b512bbedb56ccc660a64a5159c1dcb1ec164` |
+| `skills/research/SKILL.md` | `831567ab592c1135765e278e06e5157a221a186ff852b3fd351992f6e765735c` |

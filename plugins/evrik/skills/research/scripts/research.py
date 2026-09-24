@@ -837,7 +837,7 @@ def extract_source(storage: Path, directory: Path) -> Path:
     source.mkdir()
     # Invalid Git metadata stops ancestor discovery even when paths contain os.pathsep.
     # This is deliberately not a valid gitdir pointer to any external directory.
-    (source / ".git").write_text("Research Lab snapshot: Git metadata is unavailable.\n", encoding="utf-8")
+    (source / ".git").write_text("Evrik snapshot: Git metadata is unavailable.\n", encoding="utf-8")
     with zipfile.ZipFile(directory / "source.zip") as archive:
         files = snapshot_files(archive)
         for name, entry in files.items():

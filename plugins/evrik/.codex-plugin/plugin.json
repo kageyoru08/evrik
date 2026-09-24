@@ -1,17 +1,17 @@
 {
-  "name": "research-lab",
-  "version": "1.0.0",
+  "name": "evrik",
+  "version": "1.0.1",
   "description": "Evidence-led research and reproducible local experiments using native Codex tools.",
   "author": {
     "name": "Kageyoru",
     "url": "https://github.com/kageyoru08"
   },
-  "repository": "https://github.com/kageyoru08/research-lab",
+  "repository": "https://github.com/kageyoru08/evrik",
   "license": "MIT",
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json",
   "interface": {
-    "displayName": "Research Lab",
+    "displayName": "Evrik",
     "shortDescription": "Research with traceable experiments and evidence.",
     "longDescription": "Use native Codex agents, Git and tools to investigate questions, run committed experiments, compare valid evidence and resume from durable records.",
     "developerName": "Kageyoru",

@@ -60,7 +60,7 @@ class FaultBoundaryTests(unittest.TestCase):
     @contextmanager
     def case(self, label, *, hold=False):
         evidence = Path(os.environ.get(
-            "RESEARCH_FAULT_EVIDENCE", str(Path(tempfile.gettempdir()) / "research-lab-fault-evidence")
+            "RESEARCH_FAULT_EVIDENCE", str(Path(tempfile.gettempdir()) / "evrik-fault-evidence")
         )).resolve()
         evidence.mkdir(parents=True, exist_ok=True)
         root = Path(tempfile.mkdtemp(prefix=label + "-", dir=evidence))

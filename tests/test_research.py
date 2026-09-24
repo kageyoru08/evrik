@@ -33,7 +33,7 @@ RELEASE_GATED_WORKER = (
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="research lab test ")
+        self.temporary = tempfile.TemporaryDirectory(prefix="evrik test ")
         self.addCleanup(self.temporary.cleanup)
         self.project = make_project(Path(self.temporary.name) / "project")
 
@@ -931,7 +931,7 @@ class RunnerTests(unittest.TestCase):
 
 class DemoTests(unittest.TestCase):
     def test_complete_demo_emits_a_traceable_report(self):
-        with tempfile.TemporaryDirectory(prefix="research-lab-demo-test-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="evrik-demo-test-") as temporary:
             result = subprocess.run(
                 [sys.executable, str(ROOT / "examples/run_demo.py"), "--workspace", str(Path(temporary) / "demo")],
                 capture_output=True, text=True, timeout=45,

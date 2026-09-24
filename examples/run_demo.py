@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER = ROOT / "plugins/research-lab/skills/research/scripts/research.py"
+RUNNER = ROOT / "plugins/evrik/skills/research/scripts/research.py"
 
 
 def git(project: Path, *args: str) -> str:
@@ -29,7 +29,7 @@ def make_project(project: Path, *, declare_entry: bool = True) -> Path:
     shutil.copytree(ROOT / "examples/small-regression", project, dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns("__pycache__", ".research"))
     git(project, "init", "-b", "main")
-    git(project, "config", "user.name", "Research Lab Demo")
+    git(project, "config", "user.name", "Evrik Demo")
     git(project, "config", "user.email", "demo@example.invalid")
     git(project, "config", "core.autocrlf", "false")
     git(project, "add", ".")

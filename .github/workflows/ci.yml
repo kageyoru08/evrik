@@ -16,12 +16,12 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s tests -v
         env:
-          RESEARCH_FAULT_EVIDENCE: ${{ runner.temp }}/research-lab-fault-evidence
+          RESEARCH_FAULT_EVIDENCE: ${{ runner.temp }}/evrik-fault-evidence
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: runner-${{ matrix.os }}-py${{ matrix.python }}
-          path: ${{ runner.temp }}/research-lab-fault-evidence/reports/*.json
+          path: ${{ runner.temp }}/evrik-fault-evidence/reports/*.json
           if-no-files-found: error
   distribution:
     strategy:
@@ -40,19 +40,19 @@ jobs:
           node-version: '22'
       - run: npm install --global @openai/codex@latest
       - name: Check committed package and native plugin lifecycle
-        run: python tests/check_distribution.py --native --work-dir "${{ runner.temp }}/research-lab-distribution"
+        run: python tests/check_distribution.py --native --work-dir "${{ runner.temp }}/evrik-distribution"
       - name: Verify published commit through the public marketplace origin
-        if: github.repository == 'kageyoru08/research-lab' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: python tests/check_distribution.py --native --public-source https://github.com/kageyoru08/research-lab.git --work-dir "${{ runner.temp }}/research-lab-public-distribution"
+        if: github.repository == 'kageyoru08/evrik' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: python tests/check_distribution.py --native --public-source https://github.com/kageyoru08/evrik.git --work-dir "${{ runner.temp }}/evrik-public-distribution"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: distribution-${{ matrix.os }}
           path: |
-            ${{ runner.temp }}/research-lab-distribution/report.json
-            ${{ runner.temp }}/research-lab-distribution/*-app-server.json
-            ${{ runner.temp }}/research-lab-distribution/*-app-server.stderr.txt
-            ${{ runner.temp }}/research-lab-public-distribution/report.json
-            ${{ runner.temp }}/research-lab-public-distribution/*-app-server.json
-            ${{ runner.temp }}/research-lab-public-distribution/*-app-server.stderr.txt
+            ${{ runner.temp }}/evrik-distribution/report.json
+            ${{ runner.temp }}/evrik-distribution/*-app-server.json
+            ${{ runner.temp }}/evrik-distribution/*-app-server.stderr.txt
+            ${{ runner.temp }}/evrik-public-distribution/report.json
+            ${{ runner.temp }}/evrik-public-distribution/*-app-server.json
+            ${{ runner.temp }}/evrik-public-distribution/*-app-server.stderr.txt
           if-no-files-found: error

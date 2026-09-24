@@ -26,20 +26,23 @@ import tomllib
 import zipfile
 
 
-PLUGIN = "plugins/research-lab/"
-BASELINE_PLUGIN_FILES = {
+PLUGIN = "plugins/evrik/"
+# Historical identity is used only to verify explicit uninstall/reinstall migration.
+LEGACY_NAME = "research-lab"
+LEGACY_ID = f"{LEGACY_NAME}@{LEGACY_NAME}"
+PLUGIN_ID = "evrik@evrik"
+VERSION = "1.0.1"
+PLUGIN_FILES = {
     ".codex-plugin/plugin.json", "LICENSE", "skills/research/SKILL.md",
     "skills/research/agents/openai.yaml", "skills/research/scripts/research.py",
     "skills/research/references/literature.md",
     "skills/research/references/experiments.md",
     "skills/research/references/evidence.md",
-}
-PLUGIN_FILES = BASELINE_PLUGIN_FILES | {
     "hooks/hooks.json", "skills/research/references/parallelism.md",
 }
 HOOK_COMMAND = 'python3 -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
 HOOK_COMMAND_WINDOWS = 'python -X utf8 -B "${CLAUDE_PLUGIN_ROOT}/skills/research/scripts/research.py" evidence hook'
-BASELINE = "37bf04427c14c204450cd56576852573cab360b7"
+BASELINE = "d27a243e52effcdee344a5adb03f614554bee608"
 MARKETPLACE = ".agents/plugins/marketplace.json"
 REPO_FILES = {PLUGIN + name for name in PLUGIN_FILES} | {
     MARKETPLACE, ".gitattributes", ".gitignore", ".github/workflows/ci.yml",
@@ -71,7 +74,7 @@ def run(args, *, cwd=None, env=None, check=True, timeout=90):
 
 
 def git(repo, *args):
-    return run(["git", "-C", repo, *args]).stdout
+    return run(["git", "--no-optional-locks", "-C", repo, *args]).stdout
 
 
 def committed_files(repo, revision):
@@ -89,9 +92,9 @@ def committed_files(repo, revision):
     return commit, files
 
 
-def payload(files, expected_files=PLUGIN_FILES):
-    values = {name[len(PLUGIN):]: content for name, content in files.items() if name.startswith(PLUGIN)}
-    require(set(values) == expected_files, f"Unexpected plugin inventory: {sorted(set(values) ^ expected_files)}")
+def payload(files, prefix=PLUGIN):
+    values = {name[len(prefix):]: content for name, content in files.items() if name.startswith(prefix)}
+    require(set(values) == PLUGIN_FILES, f"Unexpected plugin inventory: {sorted(set(values) ^ PLUGIN_FILES)}")
     return values
 
 
@@ -133,15 +136,18 @@ def audit_package(repo, revision, report, work):
     plugin = payload(files)
     manifest = json.loads(plugin[".codex-plugin/plugin.json"])
     marketplace = json.loads(files[MARKETPLACE])
-    require(manifest["name"] == marketplace["name"] == "research-lab", "Product name mismatch")
-    require(manifest["version"] == "1.0.0", "Plugin version must remain exactly 1.0.0")
+    require(manifest["name"] == marketplace["name"] == "evrik", "Product name mismatch")
+    require(manifest["version"] == VERSION, f"Plugin version must be {VERSION}")
+    require(manifest["repository"] == "https://github.com/kageyoru08/evrik" and
+            manifest["interface"]["displayName"] == marketplace["interface"]["displayName"] == "Evrik",
+            "Public repository or display identity differs")
     require(manifest["skills"] == "./skills/" and manifest["license"] == "MIT", "Invalid plugin paths/license")
     require(not (set(manifest) & {"mcpServers", "apps", "commands"}), "Unexpected runtime integration")
     require(manifest.get("hooks") == "./hooks/hooks.json", "Invalid native hook path")
     validate_hooks(plugin["hooks/hooks.json"])
     require(manifest["interface"]["capabilities"] == [], "Unexpected declared capability")
-    require(len(marketplace["plugins"]) == 1 and marketplace["plugins"][0]["name"] == "research-lab", "Expected one plugin")
-    require(marketplace["plugins"][0]["source"] == {"source": "local", "path": "./plugins/research-lab"}, "Invalid marketplace source")
+    require(len(marketplace["plugins"]) == 1 and marketplace["plugins"][0]["name"] == "evrik", "Expected one plugin")
+    require(marketplace["plugins"][0]["source"] == {"source": "local", "path": "./plugins/evrik"}, "Invalid marketplace source")
     require(plugin["LICENSE"] == files["LICENSE"], "Packaged license differs")
     runner_ast = ast.parse(plugin["skills/research/scripts/research.py"].decode())
     imports = set()
@@ -199,12 +205,12 @@ def disk_hashes(directory):
             for path in sorted(directory.rglob("*")) if path.is_file()}
 
 
-def hook_inventory(response, project, installed, expect_hooks):
+def hook_inventory(response, project, installed, expect_hooks, plugin_id=PLUGIN_ID):
     require(len(response["data"]) == 1, "Unexpected hook response scope")
     entry = response["data"][0]
     require(Path(entry["cwd"]).resolve() == project, "Hook listing cwd differs")
     require(not entry["errors"], f"Hook loader errors: {entry['errors']}")
-    found = [hook for hook in entry["hooks"] if hook.get("pluginId") == "research-lab@research-lab"]
+    found = [hook for hook in entry["hooks"] if hook.get("pluginId") == plugin_id]
     require(len(found) == (2 if expect_hooks else 0), "Unexpected research hook count")
     if expect_hooks:
         require({hook["eventName"] for hook in found} == {"preToolUse", "postToolUse"}, "Unexpected research hook events")
@@ -217,7 +223,7 @@ def hook_inventory(response, project, installed, expect_hooks):
             require(hook["trustStatus"] == "untrusted" and hook["isManaged"] is False,
                     "Discovery check must not grant hook trust")
             require(re.fullmatch(r"sha256:[0-9a-f]{64}", hook["currentHash"]) is not None, "Missing hook definition identity")
-    other = [hook for hook in entry["hooks"] if hook.get("pluginId") != "research-lab@research-lab"]
+    other = [hook for hook in entry["hooks"] if hook.get("pluginId") != plugin_id]
     canary = [hook for hook in other if hook.get("pluginId") == "distribution-canary@distribution-canary"]
     require(len(canary) == 1 and canary[0]["enabled"] is True and canary[0]["trustStatus"] == "untrusted",
             "Unrelated canary hook disappeared or acquired trust")
@@ -228,9 +234,11 @@ def hook_inventory(response, project, installed, expect_hooks):
             "scope": "discovery only; hook execution is not tested or qualified", "expected_research_hooks": 2 if expect_hooks else 0}
 
 
-def loader(cli, env, project, installed, work, label, *, research_installed=True, expect_hooks=True):
+def loader(cli, env, project, installed, work, label, *, research_installed=True, expect_hooks=True,
+           plugin_id=PLUGIN_ID):
     """Fresh native task + forced skill reload, with no turn/start or model call."""
     events = []
+    closure = {"termination": "not_closed", "exit_code": None}
     messages = queue.Queue()
     stderr_path = work / f"{label}-app-server.stderr.txt"
     with stderr_path.open("w", encoding="utf-8") as stderr:
@@ -270,7 +278,7 @@ def loader(cli, env, project, installed, work, label, *, research_installed=True
                     require("error" not in message, f"App-server error: {message}")
                     return message["result"]
         try:
-            request(1, "initialize", {"clientInfo": {"name": "research_lab_distribution", "version": "1.0.0"},
+            request(1, "initialize", {"clientInfo": {"name": "evrik_distribution", "version": VERSION},
                                      "capabilities": {"experimentalApi": True}})
             send("initialized")
             started = request(2, "thread/start", {"cwd": str(project), "ephemeral": True})
@@ -280,31 +288,39 @@ def loader(cli, env, project, installed, work, label, *, research_installed=True
             require(len(skills["data"]) == 1, "Unexpected skill response scope")
             entry = skills["data"][0]
             require(not entry["errors"], f"Skill loader errors: {entry['errors']}")
-            found = [skill for skill in entry["skills"] if skill.get("pluginId") == "research-lab@research-lab"]
+            found = [skill for skill in entry["skills"] if skill.get("pluginId") == plugin_id]
             require(len(found) == (1 if research_installed else 0), "Unexpected research skill count")
             if research_installed:
-                require(found[0]["name"] == "research-lab:research" and found[0]["enabled"], "Installed research skill not enabled")
+                require(found[0]["name"] == f"{plugin_id.split('@')[0]}:research" and found[0]["enabled"],
+                        "Installed research skill not enabled")
                 require(Path(found[0]["path"]).resolve() == installed / "skills/research/SKILL.md", "Loader used a different skill path")
             require(any(skill.get("pluginId") == "distribution-canary@distribution-canary" and skill["enabled"]
                         for skill in entry["skills"]), "Canary skill disappeared")
-            hooks = hook_inventory(request(4, "hooks/list", {"cwds": [str(project)]}), project, installed, expect_hooks)
+            hooks = hook_inventory(request(4, "hooks/list", {"cwds": [str(project)]}), project,
+                                   installed, expect_hooks, plugin_id)
             request(5, "thread/unsubscribe", {"threadId": started["thread"]["id"]})
             return {"thread_id": started["thread"]["id"], "ephemeral": True,
-                    "skill": found[0] if found else None, "loader_errors": entry["errors"], "hooks": hooks, "model_turns": 0}
+                    "skill": found[0] if found else None, "loader_errors": entry["errors"],
+                    "hooks": hooks, "model_turns": 0, "process": closure}
         finally:
-            (work / f"{label}-app-server.json").write_text(json.dumps(events, indent=2) + "\n", encoding="utf-8")
             process.stdin.close()
             try:
                 process.wait(timeout=10)
+                closure["termination"] = "stdin_eof"
             except subprocess.TimeoutExpired:
+                closure["termination"] = "terminate"
                 process.terminate()
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
+                    closure["termination"] = "kill"
                     process.kill()
                     process.wait(timeout=5)
             reader.join(timeout=2)
             process.stdout.close()
+            closure["exit_code"] = process.returncode
+            events.append({"process": dict(closure)})
+            (work / f"{label}-app-server.json").write_text(json.dumps(events, indent=2) + "\n", encoding="utf-8")
 
 
 def native_checks(repo, commit, files, args, report, work):
@@ -382,18 +398,18 @@ def native_checks(repo, commit, files, args, report, work):
     preserved_project = disk_hashes(project)
     before_config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
     native["config_before"] = before_config
-    installed = home / "plugins/cache/research-lab/research-lab/1.0.0"
+    installed = home / f"plugins/cache/evrik/evrik/{VERSION}"
     native["before_loader"] = loader(cli, env, project, installed, work, "before-research",
                                      research_installed=False, expect_hooks=False)
     preserved_hooks = native["before_loader"]["hooks"]["other"]
-    def load_at(label, expected):
-        observed = loader(cli, env, project, installed, work, label, research_installed=bool(expected),
-                          expect_hooks="hooks/hooks.json" in expected)
+    def load_at(label, expected, cache=installed, plugin_id=PLUGIN_ID):
+        observed = loader(cli, env, project, cache, work, label, research_installed=bool(expected),
+                          expect_hooks="hooks/hooks.json" in expected, plugin_id=plugin_id)
         require(observed["hooks"]["other"] == preserved_hooks, f"Unrelated hook metadata changed at {label}")
         native.setdefault("hook_loaders", {})[label] = observed
         return observed
-    def state(label, expected, expected_revision=commit):
-        observed = disk_hashes(installed)
+    def state(label, expected, expected_revision=commit, cache=installed):
+        observed = disk_hashes(cache)
         require(observed == hashes(expected), f"Installed payload mismatch at {label}: {observed}")
         require(marketplace_root.is_relative_to(home), "Git marketplace snapshot is outside isolated CODEX_HOME")
         snapshot_commit = git(marketplace_root, "rev-parse", "HEAD").decode().strip()
@@ -406,7 +422,7 @@ def native_checks(repo, commit, files, args, report, work):
         for section in ("plugins", "marketplaces"):
             if section in projected:
                 for key in list(projected[section]):
-                    if key in {"research-lab", "research-lab@research-lab"}:
+                    if key in {"evrik", PLUGIN_ID, LEGACY_NAME, LEGACY_ID}:
                         del projected[section][key]
                 if not projected[section]:
                     del projected[section]
@@ -417,37 +433,50 @@ def native_checks(repo, commit, files, args, report, work):
     if args.public_source:
         added = command("plugin", "marketplace", "add", args.public_source, "--ref", commit)
         marketplace_root = Path(added["installedRoot"]).resolve()
-        command("plugin", "add", "research-lab@research-lab")
+        command("plugin", "add", "evrik@evrik")
         state("public-installed-B", payload(files))
         native["loader"] = load_at("public-B", payload(files))
         state("public-loaded-B", payload(files))
         return
     baseline, old_files = committed_files(repo, args.baseline)
-    old = payload(old_files, BASELINE_PLUGIN_FILES)
+    old = payload(old_files, f"plugins/{LEGACY_NAME}/")
     new = payload(files)
     require(json.loads(old[".codex-plugin/plugin.json"])["version"] == "1.0.0", "Baseline version differs")
-    require(baseline != commit and hashes(old) != hashes(new), "A and B must be different real payloads")
+    require(json.loads(old[".codex-plugin/plugin.json"])["name"] == LEGACY_NAME, "Baseline identity differs")
+    require(baseline != commit and hashes(old) != hashes(new), "Legacy and renamed packages must differ")
     changed = [name for name in sorted(set(old) | set(new)) if old.get(name) != new.get(name)]
-    require("skills/research/scripts/research.py" in changed and
-            any(name == "skills/research/SKILL.md" or "/references/" in name for name in changed),
-            "Choose an actual baseline with both source and guidance differences")
     origin = work / "origin.git"
     run(["git", "clone", "--bare", "--no-hardlinks", repo, origin], env=env)
     run(["git", "--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"], env=env)
     run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", baseline], env=env)
-    source = "https://distribution.invalid/research-lab.git"
+    source = "https://distribution.invalid/evrik.git"
     run(["git", "config", "--file", work / "gitconfig", f"url.{origin.as_uri()}.insteadOf", source], env=env)
     native.update(baseline_commit=baseline, candidate_commit=commit, changed_plugin_files=changed,
                   added_plugin_files=sorted(set(new) - set(old)), removed_plugin_files=sorted(set(old) - set(new)),
-                  baseline_plugin_files=sorted(BASELINE_PLUGIN_FILES), candidate_plugin_files=sorted(PLUGIN_FILES),
+                  baseline_plugin_files=sorted(old), candidate_plugin_files=sorted(new),
                   local_origin=str(origin), source_transport="child-only Git URL rewrite to owned bare file origin")
     added = command("plugin", "marketplace", "add", source)
     marketplace_root = Path(added["installedRoot"]).resolve()
-    command("plugin", "add", "research-lab@research-lab")
-    state("installed-A", old, baseline)
-    load_at("installed-A", old)
+    legacy_cache = home / f"plugins/cache/{LEGACY_NAME}/{LEGACY_NAME}/1.0.0"
+    legacy_marketplace = marketplace_root
+    command("plugin", "add", LEGACY_ID)
+    state("legacy-installed", old, baseline, legacy_cache)
+    load_at("legacy-installed", old, legacy_cache, LEGACY_ID)
+    command("plugin", "remove", LEGACY_ID)
+    require(not legacy_cache.exists(), "Legacy plugin cache remains after uninstall")
+    load_at("legacy-removed", {})
+    command("plugin", "marketplace", "remove", LEGACY_NAME)
+    require(not legacy_marketplace.exists(), "Legacy marketplace checkout remains")
     run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", commit], env=env)
-    command("plugin", "marketplace", "upgrade", "research-lab")
+    added = command("plugin", "marketplace", "add", source)
+    marketplace_root = Path(added["installedRoot"]).resolve()
+    command("plugin", "add", PLUGIN_ID)
+    migrated_config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+    require(LEGACY_ID not in migrated_config.get("plugins", {}) and
+            LEGACY_NAME not in migrated_config.get("marketplaces", {}), "Legacy configuration remains")
+    state("migrated-B", new)
+    load_at("migrated-B", new)
+    command("plugin", "marketplace", "upgrade", "evrik")
     state("refreshed-B", new)
     native["loader"] = load_at("refreshed-B", new)
     state("loaded-B", new)
@@ -455,24 +484,19 @@ def native_checks(repo, commit, files, args, report, work):
     require(origin.resolve().is_relative_to(work) and unavailable.resolve().is_relative_to(work), "Origin move escaped work directory")
     origin.rename(unavailable)
     try:
-        command("plugin", "marketplace", "upgrade", "research-lab", expected_success=False)
+        command("plugin", "marketplace", "upgrade", "evrik", expected_success=False)
         state("failed-refresh-retained-B", new)
         load_at("failed-refresh-retained-B", new)
     finally:
         unavailable.rename(origin)
-    command("plugin", "remove", "research-lab@research-lab")
+    command("plugin", "remove", "evrik@evrik")
     state("removed", {})
     require(not installed.exists(), "Removed plugin cache directory remains")
     load_at("removed", {})
-    command("plugin", "add", "research-lab@research-lab")
+    command("plugin", "add", "evrik@evrik")
     state("reinstalled-B", new)
     native["reinstalled_loader"] = load_at("reinstalled-B", new)
     state("reinstalled-loaded-B", new)
-    run(["git", "--git-dir", origin, "update-ref", "refs/heads/main", baseline], env=env)
-    command("plugin", "marketplace", "upgrade", "research-lab")
-    state("restored-A", old, baseline)
-    load_at("restored-A", old)
-    state("restored-A", old, baseline)
 
 
 def main():
