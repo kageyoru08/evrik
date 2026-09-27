@@ -10,9 +10,9 @@ without Git. Declare the actual report and working checkpoint paths relative
 to that directory; do not create a fake experiment protocol for literature.
 
 ```text
-evidence activate --project ROOT --artifact REPORT --artifact CHECKPOINT --public-web --record CHECKPOINT
+evidence activate --project ROOT --artifact REPORT --artifact CHECKPOINT --public-web --record CHECKPOINT --hook-root NATIVE_WORKSPACE
 evidence sources --project ROOT
-evidence readback --project ROOT
+evidence next --project ROOT
 evidence check --project ROOT
 evidence close --project ROOT
 ```
@@ -23,16 +23,27 @@ it attaches existing obligations, comparisons, claims and run state. Omit
 the native session and thread IDs from its two named runtime values; missing
 identity is not repaired by inventing an ID. Initial support is the activated
 root actor. Worker capture and other tool routes are not implied.
+For public web, `--hook-root` is the native chat workspace where the hook runs;
+it defaults to the activation command's working directory. A stream activation
+binds that workspace to this project for the native session. There is one active
+public-web destination per owner/workspace. Reader calls diagnose a mismatching
+hook root; they cannot grant a normal close while that binding is wrong.
 
 Before activation, enumerate every project-relative text artifact required
 for final review, including the shared decision, participant responses and
 any additional API or refusal ledger. Declare those paths with repeated
 `--artifact` options even if the files will be written later. `--experiment`
 attaches runner state; it does not discover arbitrary collaboration files.
-An active session cannot change its artifact scope. If required scope grows,
-preserve and close the existing session honestly, then explicitly activate
-the complete new scope and perform a fresh complete readback. Retain any
-earlier incomplete result; a narrower close does not cover omitted files.
+New activations use `stream-v1`. If scope changes, use
+`evidence revise --project ROOT --artifact REPORT --artifact CHECKPOINT --artifact NEW --reason TEXT`
+with the **complete** intended scope, including retained files. The previous
+scope record and all receipts remain immutable. The new scope needs a fresh
+manifest read; unchanged artifact units can reuse validated native page proofs
+from this same activation. Changed units need new reads. Removing a file is
+explicitly recorded and does not prove that its obligation was resolved.
+Legacy `pages-v1` generations retain their original bytes and limits; close
+them honestly before a new streaming activation. Handler changes require a
+new activation and do not inherit native credit from the previous handler.
 
 Activation records intent and exact deliverable paths. Native hooks must also
 be discovered, enabled and trusted through Codex's `/hooks` interface. They
@@ -74,13 +85,24 @@ reference checks do not assess the scientific meaning of the notes, source
 access, version relevance or citation accuracy. Arbitrary writes and chat
 are outside this prerequisite.
 
-Activation's `readback_command` and `sources_command`, when present, are shell
+Activation's `resume_command`, `readback_command` and `sources_command` are shell
 commands for the existing native execution tool, not separately named reader
 tools. Run the returned string literally, preserving its executable, script
 path, flags, quoting and project. A hand-written equivalent can emit output
 without producing a native match.
-The reader returns bounded JSON frames containing complete canonical-JSON
-text segments of one saved bundle. Small bundles have one page. Return each
+For final artifacts, prefer the same generated `resume_command` (`evidence next`)
+on each call: it selects the first unmatched part, resumes the same immutable
+receipt after interruption, or creates a new manifest when current bytes change.
+`check` supplies `resume_functions_exec_source`, progress, size including companion
+metadata, and unmet conditions. It never silently closes, retries a retrieval,
+dispatches a reviewer, or treats emission as native matching.
+
+The streaming reader returns bounded JSON frames of saved UTF-8 artifact bytes,
+the scope manifest and complete companion metadata. `page.part` identifies the
+unit, byte offset and chunk hash. There is no aggregate 256 KiB limit. It hashes
+and copies file chunks without loading the full artifact corpus into memory;
+manifests and runner metadata still use memory proportional to their size.
+The source reader retains its bounded capture contract below. Return each
 complete frame through a separate native call, then follow its exact
 `next_command`; do not combine all pages into one tool output. Requested
 output capacity must cover every initial, continuation and recovery frame,
@@ -104,10 +126,10 @@ Status provides the same template beside each pending command, including
 `next_readback_functions_exec_source`. Inspect each returned page before using
 the next template; do not batch or loop over templates. These call templates
 are a convenience, not proof of delivery or review, and do not run check or close.
-The helper reads every declared small UTF-8 file and saves an
-immutable bundle under `.research/evidence/`. Missing, unsafe, oversized or
-non-text artifacts are incomplete; no heading filter or silent truncation
-substitutes for the declared contents. Read every segment in its bundle
+The helper reads every declared UTF-8 file and saves immutable hash-addressed
+parts under `.research/evidence/`. Missing, unsafe, non-text artifacts or
+metadata that cannot fit a frame remain incomplete; no heading filter or silent
+truncation substitutes for the declared contents. Read every segment in its unit
 context and assess that bundle against
 the question and retained sources. The generated obligation/run view is a
 closure companion; carry its material state into the actual checkpoint.
@@ -115,7 +137,7 @@ closure companion; carry its material state into the actual checkpoint.
 `check` compares current deliverables and attached evidence with that
 readback. Relevant changes require another readback; never mix pages from
 different receipts. Each page needs its exact native request/response match,
-and the complete unique page set must reconstruct the saved bundle before
+and the complete unique page set must cover the manifest and verify every unit hash before
 the reader is acknowledged. Page delivery order is not an acceptance rule;
 missing pages and duplicate reads cannot satisfy coverage. Count every page
 and failed call within the task's existing budget, reserving final review
@@ -147,6 +169,60 @@ or hash-only substitute is supported. A missing match does not establish
 that the native route is unavailable. `semantic_review_verified: false` is
 expected: semantic judgment is outside machine proof and does not prevent
 ordinary close.
+
+`check.diagnostics` reports routed hook events, recognition, saved attempts,
+response type/byte count, matching stage and the first failure. It never stores
+the raw hook envelope or private session fields. No observed event means only
+that no event was recorded for this activation; it does not prove that hooks
+are absent. Diagnostic counts are operational telemetry, not evidence credit.
+Generated reader commands route to their explicitly activated project even
+when the native hook runs at a parent workspace. Other shell spellings remain
+unmatched and are diagnosed when the activation can be located.
+
+## Supported capture boundaries
+
+| Route | Capture and verification | Boundary |
+| --- | --- | --- |
+| Root native generated reader | Pre/Post request, response bytes, all part hashes, current scope | Does not attest comprehension or outer display |
+| Root native `webrun` search/open/find | Bounded request/returned text, source reader and record references | Explicit hook-workspace route for stream sessions; supported text only, 256 KiB capture and source bundle limits |
+| Exa or another source tool | `record source` imports an already saved ordinary response and explicit identity metadata | Not automatic native capture; do not retrieve again just to fill a receipt |
+| Worker ordinary output | `record save`, or `record review` bound to a frozen packet | Caller-reported identity; no private sessions, implied routing, or model attestation |
+| Scientific acceptance | Human/agent judgment against the declared protocol | Neither MATCH, exit 0, result `valid`, nor collected votes establishes it |
+
+Separate capability **specified**, **installed**, **ready**, and **verified in
+this environment**. Record host/version, observed probe and any unavailable
+reason only when that capability matters. A listed tool or trusted hook is
+not proof that its execution succeeded.
+
+## Version working records and recover reviews
+
+Use these optional commands when a document or review needs durable identity:
+
+```text
+record save --project ROOT --key checkpoint --input CHECKPOINT
+record freeze --project ROOT --key final-review --artifact REPORT --artifact CHECKPOINT --reviewer ROOT_ID --reviewer PEER_ID
+record review --project ROOT --key peer-invitation --packet PACKET_HASH --reviewer PEER_ID --status failed --input SAVED_FAILURE --model ACTUAL_MODEL
+record review --project ROOT --key peer-vote --packet PACKET_HASH --reviewer PEER_ID --status completed --decision accept --input SAVED_VOTE --model ACTUAL_MODEL
+record withdraw --project ROOT --key correction --target VOTE_RECORD_HASH --reason TEXT
+status --project ROOT
+status --project ROOT --since STATUS_HASH
+```
+
+Records preserve exclusively created copies and hashes of the actual bytes,
+including LF/CRLF differences. They are copies, not links. Repeating the same
+event is idempotent. A withdrawal appends a record; it never edits the vote.
+A frozen packet declares required reviewer identities. Failed or missing
+invitations remain unresolved; recovering a review uses those saved artifacts,
+not another experiment or an invented approval. Inspect the current native
+inventory and actual returned actor ID before any authorized invitation.
+Recording a status does not dispatch, queue, cancel or attest an actor.
+
+`status` separates execution, saved-artifact integrity, scientific assessability,
+review decisions, and native verification. A review of changed packet bytes is
+stale. An accepted review packet is still not scientific qualification. The
+delta view suppresses unchanged facets. Administration reports only measured
+local preflight time and record counts; model tokens, other administrative time
+and cost stay unknown. Do not claim a saving percentage from those counters.
 
 When a required capability remains unavailable, preserve the concrete cause
 with `evidence close --project ROOT --incomplete --reason TEXT`. That closes

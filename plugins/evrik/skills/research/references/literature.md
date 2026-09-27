@@ -105,6 +105,28 @@ Check corrections, version differences, and newer evidence when the subject or c
 
 ## Synthesize by claim
 
+For a consequential synthesis, keep a compact coverage table in the existing
+working record. Update it when the user changes the question; do not create a
+second research program merely to maintain a table.
+
+| Question or constraint | Evidence needed | Inspected source/version | Answer location | Coverage and limit |
+| --- | --- | --- | --- | --- |
+| Material question | Discriminating observation | Actual source | Report section | Covered / partial / unavailable |
+
+Audit material claims at their actual scope. A useful row contains the claim,
+source/version, inspected passage, population or dataset, number/unit and
+qualifiers, and one of **supported**, **partial**, **unsupported**,
+**contradicted**, or **unreviewed**. Resolving a DOI, matching a title, detecting
+shared words or matching a numeric token is not entailment. After editing a
+claim, revisit its row and affected conclusion. Do not automatically accept an
+empty critic response or a mechanically matching citation.
+
+Before a consequential conclusion, spend a bounded part of the agreed search
+budget on the strongest plausible alternative or overturning evidence. Specify
+what finding would change the decision and record the result. Solo review is
+sufficient when appropriate; no compulsory critic roster or repeated draft loop
+is required. A failed access or empty search does not strengthen the claim.
+
 Connect each consequential claim to its supporting source and scope: population or dataset, intervention or method, comparator, metric, and conditions. Preserve distinctions between empirical observations, author interpretations, theoretical arguments, and your own inference. Keep task/source qualifiers and distinct guarantees intact in the conclusion. Attribute each passage to the inspected document/version, not merely to a work it cites.
 
 Compare conflicting findings through their methods and conditions before choosing an explanation. Do not count papers as votes. Report relevant negative or null findings and plausible limitations of the available evidence. A benchmark gain supports the evaluated setting; extending it to another setting is a hypothesis.
@@ -114,5 +136,37 @@ An empty search establishes only that this search did not find relevant results.
 ## Deliver
 
 Use a concise answer with citations near the claims they support. Add a source table or saved research note when the work will be continued, audited, or compared later. Copying complete papers or filling the context with raw search output is unnecessary.
+
+## Import an existing source response
+
+For Exa, worker or another unsupported automatic capture route, preserve the
+ordinary completed response with `record source --project ROOT --key SOURCE_KEY
+--input SAVED_RESPONSE --metadata IDENTITY_JSON`. This is an import adapter, not
+native hook capture. The metadata schema is:
+
+```json
+{
+  "provider": "exa",
+  "call_id": "actual-ordinary-tool-call-id",
+  "requested_url": "https://example.org/requested",
+  "resolved_url": "https://example.org/actually-read",
+  "title": "Title actually returned",
+  "version": null,
+  "access": "abstract",
+  "expected": {"title": "Title being sought"}
+}
+```
+
+`provider` accepts `exa`, `web`, `worker` or `manual`. Unknown identity fields
+stay null. `expected` may compare `resolved_url`, `title` and `version`; it is
+optional in substance (`{}`), but its key is required. The importer reports
+consistent, mismatching or unreviewed fields and preserves an immutable byte
+copy. It cannot verify caller-supplied metadata against the external source or
+prove scientific support. Inspect redirects, returned title and version before
+making that judgment. Retain the actual retrieval date, evidence family,
+queries and passages in the saved response/working record. Do not repeat a
+completed retrieval to manufacture a native receipt. Declare the returned
+saved-copy and record paths in final evidence scope when their contents are
+needed for review.
 
 When recommending an experiment, identify which uncertainty it would resolve and which literature finding motivates it.

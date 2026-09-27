@@ -203,6 +203,17 @@ guarantees that every possible defect has been found.
 
 ## Preserve evidence and close
 
+When final reviewers are unavailable, freeze the exact review packet and record
+each actual invitation failure or returned vote using the optional `record`
+commands in [evidence.md](evidence.md#version-working-records-and-recover-reviews).
+Bind replies to packet hash, actual actor identity and observed model selection;
+do not replace unavailable participants or spend another invitation without
+existing authorization and budget. Reconcile the native inventory with returned
+actor IDs before routing; a locally recorded `running` status is not proof of
+current liveness. Recovery reviews the preserved packet instead of repeating
+the experiment. A changed packet invalidates the previous current-scope review.
+Withdraw a vote through a new record and preserve its original bytes.
+
 Use the existing research records and applicable evidence, literature and
 experiment paths. Automatic source capture is limited to supported root sessions;
 peers inspect shared saved evidence, request omitted sources or use the documented

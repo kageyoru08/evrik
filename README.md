@@ -8,6 +8,11 @@ A native Codex plugin for literature research and traceable local experiments. O
 
 Evrik is an original implementation inspired by the experiment and evidence workflow of [OpenResearch](https://github.com/alphaXiv/OpenResearch). It has no OpenResearch runtime dependency and does not include its source code.
 
+Selective workflow ideas from [HyperResearch](https://github.com/jordan-gibbs/hyperresearch/tree/6bae23c735c51b5df73cd1d89010588301dc8804)
+and [OpenScience](https://github.com/synthetic-sciences/openscience/tree/3e94875cde9920f6e2c76a63ba8d7da969317429)
+inform the coverage, claim audit, falsification, reproduction and capability
+guidance. Evrik does not incorporate their code or require their platforms.
+
 ## Install in Codex
 
 Use a Codex version with the native plugin marketplace and hook interfaces, plus Python 3.11 or newer (`python3` on POSIX, `python` on Windows). Git is needed for experiments, while literature evidence storage works without it. No additional Python packages are required. The commands below use the public repository:
@@ -75,11 +80,26 @@ real reconciled run state. `evidence sources` returns saved source responses;
 the next supported web call and ordinary close require its matched native
 response and retained receipt references in that working record. This checks
 source-reading steps and references, not the meaning of the evidence notes.
-`evidence readback`
-returns the declared saved text; `check` detects relevant changes and `close`
+`evidence next` resumes the first unmatched saved part; `check` detects relevant changes and `close`
 requires fresh evidence before disabling capture. Use the exact reader
 invocation returned by activation. These commands need an existing directory,
 not a Git repository or a fake protocol for literature.
+
+New evidence sessions stream immutable artifact parts and complete companion
+metadata without the former aggregate 256 KiB limit. `evidence revise` versions
+the full required scope and reuses native proof only for identical units in the
+same activation. Hook diagnostics preserve recognition/matching stages and the
+first failure. Generated reader calls explicitly route to their activated root,
+including a nested project. Existing generations retain their original proof.
+
+Optional `record` commands preserve byte versions, imported source responses,
+frozen review packets, invitation failures and vote withdrawals. They do not
+dispatch agents or fabricate native capture. `status` separates execution,
+artifact integrity, scientific assessability, reviewer decisions and native
+verification; `--since` shows only changes. `preflight` reports compatibility
+before setup and can run explicitly authorized project checks. See the
+[evidence commands and support matrix](plugins/evrik/skills/research/references/evidence.md)
+and [project preflight](plugins/evrik/skills/research/references/experiments.md).
 
 Records distinguish helper emission from a matched native response. Neither
 proves comprehension, narrative completeness, full-page access or scientific

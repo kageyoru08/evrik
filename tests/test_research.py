@@ -961,6 +961,10 @@ class EvidenceTests(unittest.TestCase):
         self.report.write_text("Source/access table: public source; locator retained.\n", encoding="utf-8")
 
     def invoke(self, operation, *args, expected=0, env=None):
+        # Preserve the historical transport's regression fixtures. The default
+        # streaming transport is covered in test_evidence_stream.py.
+        if operation == "activate":
+            args = ("--transport", "pages-v1", *args)
         result = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "evidence", operation,
                                   "--project", str(self.project), *args], cwd=self.project, env=env or self.env,
                                  capture_output=True, text=True, encoding="utf-8", timeout=20)
@@ -1006,7 +1010,10 @@ class EvidenceTests(unittest.TestCase):
 
     def inventory(self):
         directory = self.directory()
-        return {path.name: path.read_bytes() for path in directory.iterdir()} if directory.exists() else {}
+        # Mutable, sanitized diagnostics are not evidence receipts. Failures must
+        # still preserve every original receipt byte and grant no proof credit.
+        return {path.name: path.read_bytes() for path in directory.iterdir()
+                if not path.name.startswith("diagnostics-")} if directory.exists() else {}
 
     def native_page(self, literal, call, *, match=True):
         request = {"command": literal}

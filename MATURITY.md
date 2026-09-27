@@ -107,7 +107,7 @@ The selected logo is a manually drawn white E on a dark background, supplied as 
 
 The package audit keeps the historical ten-file baseline separate from the current twelve-file inventory. Distribution checks cover the changed package and native asset metadata; accepted runner tests and research observations are reused within their existing limits. The logo does not provide new scientific or model-behavior evidence.
 
-### Current payload SHA-256
+### Payload after dark logo (7e3956c)
 
 | Path beneath `plugins/evrik` | SHA-256 |
 | --- | --- |
@@ -123,3 +123,54 @@ The package audit keeps the historical ten-file baseline separate from the curre
 | `skills/research/references/literature.md` | `58f7f7f1eacdf2c727346cf44b237514b1aa03cc182c90b8c1ca63debc1ee85d` |
 | `skills/research/references/parallelism.md` | `c5afc4d6d9161b010058de2d30910ae5152334195595752bf07e0f93f3efd9d7` |
 | `skills/research/scripts/research.py` | `b6a0941bdd297e52c30e9f63e382b512bbedb56ccc660a64a5159c1dcb1ec164` |
+
+## Evidence and workflow maintenance, September 2026
+
+The maintenance version remains **1.0.0**; identify this reissue by commit and
+payload hashes. The new reader uses bounded content-addressed parts, scope
+versions and exact native proof reuse. It includes companion metadata without
+the former aggregate 256 KiB limit. Generated calls route to the activated
+project; a public-web activation explicitly binds the native hook workspace.
+Original legacy generations and failed operations remain unchanged.
+
+The motivating nested-project failure was reproduced on the installed prior
+payload: a complete one-page native response remained 0/1 with both default
+and explicit command workdir, while the same content at the chat workspace
+matched 1/1. This isolates a supported reproduction of the routing defect,
+not the cause of every historical complaint. Sanitized diagnostics now expose
+recognition and rejection stages without retaining private hook fields.
+
+New local tests exercise large artifacts, large companion metadata, UTF-8 and
+CRLF byte identity, missing/corrupt pages, resumption, scope reuse, source
+interop, frozen review recovery, immutable versions, withdrawals, source
+identity disagreement, status deltas and project preflight. Synthetic hook
+envelopes test contracts; they do not themselves establish native execution.
+Native fixture and release/CI receipts are retained in the maintenance evidence
+record for the exact reissue. Prior scientific/model observations apply only
+to unchanged mechanisms. No forecasting study or model cohort was resumed to
+qualify these changes, and no general accuracy or administrative cost saving
+is claimed.
+
+Source/worker imports are explicitly distinguished from native capture.
+Source metadata consistency is separate from semantic support. A collected or
+accepted review packet remains separate from scientific qualification.
+Non-Git evidence and document manifests are supported; the experiment runner
+still requires Git. Optional project checks bind successful preflight to a
+specific candidate and preserve failures without recycling execution budget.
+
+### Maintenance payload SHA-256
+
+| Path beneath `plugins/evrik` | SHA-256 |
+| --- | --- |
+| `.codex-plugin/plugin.json` | `53456c449dbe193bc5cfb53ef9218927ed3cecba66052f7cb9ed5db93fac5078` |
+| `hooks/hooks.json` | `da32979685e9d19c7c68f9574fd613d834133ef0e68197ead6645aac3a199edc` |
+| `LICENSE` | `bf0ba223fa49236c638a4807a856242228f631869f53993a44b582377d59b0cd` |
+| `skills/research/agents/openai.yaml` | `2cc82df1686f3fa541499518b474e1a58747b5be89e4778edf5b6137e2df563f` |
+| `skills/research/assets/logo-dark.png` | `2982edad8e2f2d3ba921045c7e45af2d0edb3521a95c921822170476bacd225e` |
+| `skills/research/assets/logo-dark.svg` | `076e8bb5289253434ed245a35980c71f243cc2a8023cc51ecc2430a7f3d16d0a` |
+| `skills/research/references/evidence.md` | `c71a70735909963b8534f9dcc188e3348387081f0ec7218493339ac6f8823720` |
+| `skills/research/references/experiments.md` | `c5900063ddd5508318203501a2e2361858c65426754761e91c39bcb18aab2aa2` |
+| `skills/research/references/literature.md` | `240e7ebaa7a315092b4bfc1ca27fca0c40a0d784e27cdac634d175bd013e1d04` |
+| `skills/research/references/parallelism.md` | `cbab5625d058ac9475138d911e6637301c9e4721bcb93ff5af211d491371dc18` |
+| `skills/research/scripts/research.py` | `4a8a932cd653ef8718c8704125701f68f305ca597557c585aae7170db5c7fef1` |
+| `skills/research/SKILL.md` | `a33a88a56b8af5d1e1b0408511e04b2acfed79177ccb73ef2b83753cd9c6103a` |

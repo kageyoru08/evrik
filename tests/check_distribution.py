@@ -54,6 +54,7 @@ REPO_FILES = {PLUGIN + name for name in PLUGIN_FILES} | {
     "examples/small-regression/evaluate.py", "examples/small-regression/model.json",
     "tests/test_research.py", "tests/check_distribution.py", "tests/fault_driver.py",
     "tests/test_fault_boundaries.py", "tests/test_input_boundaries.py",
+    "tests/test_evidence_stream.py", "tests/test_workflow.py",
 }
 
 

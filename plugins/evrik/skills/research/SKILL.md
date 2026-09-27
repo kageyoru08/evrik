@@ -105,6 +105,9 @@ Use the bundled `scripts/research.py`, resolved from this installed skill
 directory, for local Git experiments. Read its `--help` when command details
 are needed. It records protocol, committed source, declared inputs, execution,
 and results; it does not select hypotheses or prove scientific validity.
+Use `preflight --project ROOT` early to expose compatibility and budget limits.
+Project-defined checks are optional and execute only with `--run-checks` after
+their actual effects are authorized; see the experiments reference.
 
 Use trusted foreground execution within existing permissions. Preserve
 evaluated snapshots and original results. Changes to code, protocols, data,
@@ -211,6 +214,15 @@ continuation and correction reader call and its outer wrapper; a large
 request is still no guarantee of complete native delivery. Review
 the actual saved contents and attached obligation/run state in context; matched
 delivery does not establish understanding. Use `evidence check` for pending work.
+New sessions stream artifact units and complete companion metadata through
+bounded frames. Prefer generated `evidence next` to resume the first unmatched
+part. Use `evidence revise` with the complete required scope when it changes;
+identical units may reuse validated native proofs within the same activation.
+Review the new manifest and changed units. Handler changes require a new
+activation. Use `status` for separate execution, integrity, reviewer, scientific
+and native states, with `--since` for changes only. Immutable working-document
+versions, frozen review packets, and explicit source imports are optional tools
+described in the evidence reference; they do not grant scientific acceptance.
 
 For literature, cover all source/access statements and citation locators.
 For experiments, read the current checkpoint, including inherited-action

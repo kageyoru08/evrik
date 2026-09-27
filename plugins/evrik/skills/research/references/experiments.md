@@ -15,6 +15,15 @@ the task's counting units and explicit exceptions.
 
 Use a common baseline for paired ablations and a sequential lineage for justified iterative optimization. There is no mandatory experiment tree. Keep post-result revisions explicit and use new runs for changed inputs or protocols.
 
+For reproduction, record the exact target/version, whether the implementation
+is canonical or a reimplementation, expected measurement and unit, tolerance
+and its justification, environment/data requirements, and what would count as
+within tolerance, partial, not reproduced or untestable. Missing access is not
+a negative reproduction result. For a hypothesis comparison, name competing
+explanations, the discriminating test, seed/replication rationale and stopping
+criteria. Judge accuracy, seed stability and compute jointly when those are the
+task's criteria; a benchmark score alone cannot replace them.
+
 The runner protocol is `.research/protocol.json`. `init` creates a starting protocol without overwriting an existing one. Review and edit it to match the project; its defaults are not a scientific design. The executable protocol includes:
 
 - `schema_version`, `name`, and `question`.
@@ -31,6 +40,41 @@ Inspect runner validation errors for the exact accepted values. Additional scien
 When Git or the runner reports an environment, ownership, or permission error, preserve and report the concrete blocker. Do not change host/Git security configuration, invent trust entries, or evade host checks or native refusals by changing permissions or execution routes outside the authorized native approval path. A plain permission error does not establish that native approval was requested or refused. For a genuinely required action within scope, prepare its concrete command and effects and use the available native, action-specific approval path; honor its actual decision or report its unavailability. Continue independent authorized work.
 
 ## Prepare attributable source
+
+Run `preflight --project PATH` before lengthy runner setup. It reports Git-root
+compatibility, clean/ignored state and remaining launch budget. Evidence readers
+and immutable document/review snapshots support non-Git roots; experiment
+execution still requires Git. Hash manifests for review are not a replacement
+for the runner's Git source, reconciliation and comparison contracts. Do not
+silently initialize Git or change security configuration to bypass a refusal.
+
+A project can opt into real dependency imports, numerical fixtures, derived
+budget checks and output-schema checks with `.research/preflight.json`:
+
+```json
+{
+  "checks": [{"name": "imports and numeric contract", "command": ["{python}", "tests/check_contract.py"], "timeout_seconds": 30}],
+  "required_runs": 6,
+  "result_fixture": "tests/expected_result.json"
+}
+```
+
+`required_runs` is the project's explicitly calculated remaining need (for
+example candidates × seeds × folds), compared with remaining launch claims.
+`result_fixture` may be null; otherwise its finite primary metric must satisfy
+the actual runner result schema. Put numerical expectations/assertions in the
+project's existing check script. The config grants no authorization: inspect
+commands and actual effects before using `preflight --project PATH --run-checks`.
+Without that flag the checks are only described, never executed. These trusted
+foreground commands are not sandboxed or a durable job supervisor. Preserve a
+timeout as unresolved execution; child processes may survive it.
+
+When configured, `prepare` requires a successful current receipt bound to
+commit, protocol, configuration, fixture and recorded environment, with intact
+logs. Changed candidates need fresh checks. This does not bind mutable external
+dependencies or establish scientific validity. Failed checks and their logs
+remain in the immutable record ledger. No project preflight config means no
+new project-check gate for existing experiments.
 
 Use an existing Git repository root. Initialize with `init --project PATH`, then establish the explicit inherited-material entry below before experimental edits or launches. `init` reports entry status without silently declaring absence or resolving pending units. Ensure `.research/` is ignored before preparation; the runner reports this requirement and does not change `.gitignore`. Commit the intended source and any ignore-file change after reviewing the diff. `prepare` requires a clean checkout and rejects uncommitted or untracked source changes.
 
