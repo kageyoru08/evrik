@@ -15,7 +15,8 @@ class WorkflowTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="evrik workflow ")
         self.addCleanup(temporary.cleanup)
-        self.project = Path(temporary.name)
+        # Direct internal calls use the same canonical root as the CLI boundary.
+        self.project = Path(temporary.name).resolve()
         self.storage = self.project / ".research"
         self.file = self.project / "review.md"
         self.file.write_bytes(b"Review from saved evidence\r\n")

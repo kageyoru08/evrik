@@ -19,7 +19,7 @@ class StreamEvidenceTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="evrik stream ")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.project = self.root / "nested café's project"
         self.project.mkdir()
         self.session = "22222222-2222-4222-8222-222222222222"
