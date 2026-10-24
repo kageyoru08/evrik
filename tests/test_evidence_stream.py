@@ -201,6 +201,7 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
         with mock.patch.object(r, "evidence_inventory", wraps=r.evidence_inventory) as inventories, \
                 mock.patch.object(r, "evidence_session", wraps=r.evidence_session) as sessions, \
                 mock.patch.object(r, "evidence_reader_bundle", wraps=r.evidence_reader_bundle) as bundles, \
+                mock.patch.object(r, "evidence_read", wraps=r.evidence_read) as metadata, \
                 mock.patch.object(r.EvidenceFrames, "__getitem__", autospec=True,
                                   side_effect=r.EvidenceFrames.__getitem__) as reads:
             frames = []
@@ -211,6 +212,8 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
             self.assertEqual(inventories.call_count, 1)
             self.assertEqual(sessions.call_count, 1)
             self.assertEqual(bundles.call_count, 0)
+            self.assertLessEqual(sum(call.args[0].name == "header.json" for call in metadata.call_args_list), 2 * len(frames))
+            self.assertLessEqual(sum(call.args[0].name == "cursor.json" for call in metadata.call_args_list), len(frames))
             self.assertLessEqual(reads.call_count, 3 * len(frames))
         self.assertFalse((self.directory / f"matched-{frames[-1]['receipt_id']}.json").exists())
         self.assertTrue(self.action("check")["ready_to_close"])

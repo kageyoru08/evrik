@@ -196,7 +196,10 @@ on every page; session/scope file changes invalidate it. The index, cursor,
 file stamps and progress markers are scheduling hints, never native credit.
 Missing state/cursor caches recover from authoritative records; invalid or
 missing page descriptors fail closed. Emission alone does not advance the
-cursor. A completed PostToolUse marker can recover a lost cursor update.
+cursor. PostToolUse saves the native proof and marker; the next reader invocation
+advances the cursor from those durable markers. The cursor may therefore lag
+the final delivered page, including after closure; completion comes from full
+proof validation, not the cursor value. A lost cursor update is recoverable.
 At `check`/`close`, the complete saved manifest, unit/blob identities, original
 Pre/Post bindings and current evidence are independently validated without
 trusting these caches. Index creation adds one small file per page. Linear

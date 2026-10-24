@@ -52,6 +52,24 @@ installed hooks: 4/4 pages MATCH, exhausted cursor, fresh check/close and null
 terminal commands. Exact fixture bytes and original diagnostics were retained.
 This is directed delivery evidence, separate from synthetic performance counts.
 
+### Small-input index overhead
+
+A later bounded diagnosis used five alternating pairs for 128-byte, 8-KiB and
+64-KiB artifacts. Index/cursor helpers accounted for about one quarter of
+in-process pagination time, and the indexed path was slower than the retained
+unindexed path on these small fixtures. The minimal correction reuses the
+already validated header within `next` and defers cursor advancement from
+PostToolUse to the next reader call. Native Pre/Post receipts and full closure
+checks are unchanged; no size-dependent transport or threshold was introduced.
+
+Paired before/after measurements gave pagination medians of 0.392→0.377 seconds
+(128 bytes), 0.508→0.484 seconds (8 KiB), and 1.516→1.501 seconds (64 KiB).
+The three-page fixture reduced metadata reads from 42 to 36 and writes from
+21 to 20. Initial descriptor creation remains an overhead. These host-specific
+instrumented timings exclude native process/model latency and do not establish
+universal speed or cost savings. All samples and original proof boundaries are
+retained in the external maintenance record; no Garlic experiment was repeated.
+
 ## Accepted pre-rename verification
 
 CI run [35818855390](https://github.com/kageyoru08/evrik/actions/runs/35818855390), attempt 1, reports all six jobs successful for the frozen payload commit: four runner OS/Python combinations and native distribution lifecycle checks on Windows and Ubuntu. Independent review accepted all 134 downloaded evidence files, including 104 passed fault/collision reports and 79 tests in each runner combination; one Windows skip and two Ubuntu skips are platform-specific. Development-branch public-origin steps are skipped and do not count as public release verification.

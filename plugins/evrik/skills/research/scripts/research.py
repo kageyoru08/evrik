@@ -2119,8 +2119,10 @@ def evidence_index_page(directory: Path, header: dict, index: int) -> dict:
     return descriptor
 
 
-def evidence_index_frame(directory: Path, activation: dict, receipt_id: str, index: int) -> tuple[dict, dict]:
-    header = evidence_index_header(directory, activation, receipt_id)
+def evidence_index_frame(directory: Path, activation: dict, receipt_id: str, index: int,
+                         *, header: dict | None = None) -> tuple[dict, dict]:
+    if header is None:
+        header = evidence_index_header(directory, activation, receipt_id)
     page = evidence_index_page(directory, header, index)["page"]
     return header, evidence_part_frame(directory, activation, receipt_id, page, header["last_unreused"])
 
@@ -2270,7 +2272,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
                 evidence_reader_current(project, storage, directory, cached, "readback", receipt_id, header)
                 index = args.page if args.operation == "readback" else evidence_index_pending(directory, header)
                 if index is not None:
-                    _, frame = evidence_index_frame(directory, cached, receipt_id, index)
+                    _, frame = evidence_index_frame(directory, cached, receipt_id, index, header=header)
                     return frame
         # State-changing/boundary paths always load the complete authority.
         state = evidence_session(project, directory, session_id)
@@ -2784,8 +2786,7 @@ def evidence_hook() -> dict:
                 page_path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
                 if not page_path.exists():
                     evidence_write(page_path, record, immutable=True)
-                if indexed:
-                    evidence_index_pending(directory, bundle)
+                # next advances its cursor from durable markers; Post keeps native proof only.
                 # stream-v2 records only this page here. Full proof/freshness checks
                 # belong to check/close, outside the short native hook timeout.
                 complete = reader != "readback" or activation.get("reader_transport") != "stream-v2"
