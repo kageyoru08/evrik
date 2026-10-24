@@ -208,6 +208,11 @@ the header only after every group is durable. Readers validate one group at a
 time; an oversize-file check precedes parsing. This reduces creation flushes but
 reads more metadata per page. Interrupted creation preserves completed groups;
 conflicting contents and missing/malformed published groups fail closed.
+Within one locked `next` invocation, cursor advancement and frame construction
+reuse a single fully validated group, bound to its path and complete header.
+Crossing a group boundary replaces that entry; every new invocation reads again.
+This memory-only cache adds no durable state. Hooks and full `check`/`close`
+remain independent of it.
 Existing `page-cache-v1` indexes retain individual files, and activations without
 an index retain their original path. Changed handlers still require a fresh
 activation; grouping never migrates historical native credit. Linear pagination

@@ -108,6 +108,14 @@ medians still improved at all four measured sizes. These instrumented in-process
 timings are host-specific, not native process/model latency or cost. See the
 [maintenance record](MATURITY.md#descriptor-batching) for scope and limitations.
 
+A subsequent cache keeps one validated group only during a locked `next` call,
+avoiding the repeated read between cursor advancement and frame construction.
+In a separate five-pair comparison, logical metadata reads fell 15.4% at 64 KiB
+and 22.3% at 192 KiB, with unchanged write/fsync counts. Pagination medians
+changed by less than 1.5%; this is a measured reduction of read work, not evidence
+of a material latency or cost improvement. Every new call reads again; hooks and
+full proof validation remain independent. See [cache evidence](MATURITY.md#invocation-local-batch-cache).
+
 `evidence revise` versions
 the full required scope and reuses native proof only for identical units in the
 same activation. Hook diagnostics preserve recognition/matching stages and the

@@ -2123,12 +2123,15 @@ def evidence_index_header(directory: Path, activation: dict, receipt_id: str) ->
     return header
 
 
-def evidence_index_page(directory: Path, header: dict, index: int) -> dict:
+def evidence_index_page(directory: Path, header: dict, index: int, *, cache: dict | None = None) -> dict:
     if type(index) is not int or not 0 <= index < header["count"]:
         raise ResearchError("Reader page is outside the saved index")
     if "batch_size" in header:
         start = index // READER_INDEX_BATCH * READER_INDEX_BATCH
         path = safe_path(directory, f"index-{header['receipt_id']}", f"batch-{index // READER_INDEX_BATCH}.json")
+        key = (path, canonical(header)) if cache is not None else None
+        if cache is not None and key in cache:
+            return cache[key][index - start]
         try:
             if path.stat().st_size > READER_INDEX_LIMIT:
                 raise ResearchError("Reader descriptor batch exceeds its bounded size")
@@ -2156,18 +2159,21 @@ def evidence_index_page(directory: Path, header: dict, index: int) -> dict:
                 or not isinstance(part["unit"], str) or not re.fullmatch(r"[0-9a-f]{64}", str(part["sha256"]))
                 or (following is not None and (type(following) is not int or not expected < following < header["count"]))):
             raise ResearchError("Invalid indexed page descriptor")
+    if cache is not None and "batch_size" in header:
+        cache.clear()
+        cache[key] = pages
     return pages[index - start]
 
 
 def evidence_index_frame(directory: Path, activation: dict, receipt_id: str, index: int,
-                         *, header: dict | None = None) -> tuple[dict, dict]:
+                         *, header: dict | None = None, cache: dict | None = None) -> tuple[dict, dict]:
     if header is None:
         header = evidence_index_header(directory, activation, receipt_id)
-    page = evidence_index_page(directory, header, index)["page"]
+    page = evidence_index_page(directory, header, index, cache=cache)["page"]
     return header, evidence_part_frame(directory, activation, receipt_id, page, header["last_unreused"])
 
 
-def evidence_index_pending(directory: Path, header: dict) -> int | None:
+def evidence_index_pending(directory: Path, header: dict, *, cache: dict | None = None) -> int | None:
     path = safe_path(directory, f"index-{header['receipt_id']}", "cursor.json")
     if not path.exists():
         return None
@@ -2178,7 +2184,7 @@ def evidence_index_pending(directory: Path, header: dict) -> int | None:
         raise ResearchError("Invalid reader cursor")
     # Markers advance scheduling only. Check/close independently validate proof.
     while index is not None and safe_path(directory, f"page-matched-readback-{header['receipt_id']}-{index}.json").exists():
-        index = evidence_index_page(directory, header, index)["following"]
+        index = evidence_index_page(directory, header, index, cache=cache)["following"]
     if index != original:
         evidence_write(path, {"next": index})
     return index
@@ -2310,9 +2316,11 @@ def evidence_action(args: argparse.Namespace) -> dict:
                 receipt_id = args.receipt if args.operation == "readback" else cached["latest_readback"]
                 header = evidence_index_header(directory, cached, receipt_id)
                 evidence_reader_current(project, storage, directory, cached, "readback", receipt_id, header)
-                index = args.page if args.operation == "readback" else evidence_index_pending(directory, header)
+                # Reuse one validated group only inside this locked next call.
+                batch_cache = {} if args.operation == "next" else None
+                index = args.page if args.operation == "readback" else evidence_index_pending(directory, header, cache=batch_cache)
                 if index is not None:
-                    _, frame = evidence_index_frame(directory, cached, receipt_id, index, header=header)
+                    _, frame = evidence_index_frame(directory, cached, receipt_id, index, header=header, cache=batch_cache)
                     return frame
         # State-changing/boundary paths always load the complete authority.
         state = evidence_session(project, directory, session_id)

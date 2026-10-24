@@ -214,6 +214,8 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
             self.assertEqual(bundles.call_count, 0)
             self.assertLessEqual(sum(call.args[0].name == "header.json" for call in metadata.call_args_list), 2 * len(frames))
             self.assertLessEqual(sum(call.args[0].name == "cursor.json" for call in metadata.call_args_list), len(frames))
+            self.assertLessEqual(sum(call.args[0].name.startswith("batch-") for call in metadata.call_args_list),
+                                 2 * len(frames) - 1 + (len(frames) - 1) // 32)
             self.assertLessEqual(reads.call_count, 3 * len(frames))
         self.assertFalse((self.directory / f"matched-{frames[-1]['receipt_id']}.json").exists())
         self.assertTrue(self.action("check")["ready_to_close"])
@@ -243,6 +245,39 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
             for key, value in fields.items():
                 if key.endswith(("_command", "_functions_exec_source")):
                     self.assertIsNone(value)
+
+    def test_batch_cache_is_local_to_next_and_reads_again_at_group_boundary(self):
+        (self.project / "report.md").write_bytes(b"x" * (r.READER_TEXT_LIMIT * 32))
+        activation = self.action("activate")
+        first = self.page(activation["resume_command"])
+        receipt = first["receipt_id"]
+        index_dir = self.directory / f"index-{receipt}"
+        self.assertEqual(first["page"]["count"], 34)
+        with mock.patch.object(r, "evidence_read", wraps=r.evidence_read) as reads:
+            pending = self.action("next")
+            self.assertEqual(sum(call.args[0].name.startswith("batch-") for call in reads.call_args_list), 1)
+        self.assertEqual(pending["page"]["index"], 1)
+        group = index_dir / "batch-0.json"
+        original = group.read_bytes()
+        r.evidence_write(group, {"pages": []})
+        with self.assertRaises(r.ResearchError):
+            self.action("next")  # Even a same-process call must observe new corruption.
+        group.write_bytes(original)
+        self.assertEqual(self.action("next"), pending)
+        for delivered, following, expected_reads in ((31, 32, 2), (32, 33, 1)):
+            literal = activation["readback_command"] + f" --receipt {receipt} --page {delivered}"
+            self.calls += 1
+            self.assertEqual(self.hook("PreToolUse", literal), {})
+            frame = self.action("readback", receipt=receipt, page=delivered)
+            self.assertEqual(self.hook("PostToolUse", literal, r.evidence_output(frame).decode()), {})
+            r.evidence_write(index_dir / "cursor.json", {"next": delivered})
+            with mock.patch.object(r, "evidence_read", wraps=r.evidence_read) as reads:
+                frame = self.action("next")
+                self.assertEqual(sum(call.args[0].name.startswith("batch-") for call in reads.call_args_list), expected_reads)
+            self.assertEqual(frame["page"]["index"], following)
+        self.assertFalse(self.action("check")["ready_to_close"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
 
     def test_companion_factoring_preserves_edges_failures_and_rejects_invalid_references(self):
         shared = {"source": "preserved source\n" * 300, "failed_attempt": {"exit": 1, "status": "unresolved"}}

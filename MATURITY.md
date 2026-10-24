@@ -105,6 +105,50 @@ coverage is synthetic. Original diagnostics remain recorded. This is delivery
 evidence for the changed handler, not scientific acceptance or model attribution
 beyond the requested configuration.
 
+### Invocation-local batch cache
+
+The follow-up cache reuses one fully validated descriptor group between cursor
+advancement and frame construction within a single locked `next` invocation.
+Its key binds the safe path and full validated header; crossing a group boundary
+replaces the entry. It adds no durable state or reuse across invocations. Hook,
+legacy index and full authoritative check/close paths remain uncached.
+
+One separate cohort used five alternating pairs at each size. All 40 samples
+completed synthetic check/close. The medians were:
+
+| Artifact | Pages | Logical metadata bytes, before→after | Reduction | Batch reads, before→after | Pagination ms, before→after |
+|---|---:|---:|---:|---:|---:|
+| 128 bytes | 3 | 34,738→33,204 | 4.4% | 7→5 | 732→727 |
+| 8 KiB | 4 | 48,642→45,672 | 6.1% | 10→7 | 952→938 |
+| 64 KiB | 13 | 234,350→198,314 | 15.4% | 37→25 | 2,952→2,910 |
+| 192 KiB | 34 | 1,019,635→791,846 | 22.3% | 100→68 | 7,550→7,541 |
+
+Descriptor-validation visits also fell at every size (3,050→2,056 at 34 pages).
+Metadata write counts and creation fsync counts were unchanged in every pair;
+creation still uses 2/2/2/3 file fsyncs. Serialized write byte counts varied by
+at most one byte between independent fixtures, with the exact cause unresolved
+from the saved counters. An initial audit incorrectly required byte equality,
+beyond the prospective write-count gate; its failure is retained. Only that
+extra assertion was removed, with all source, samples and frozen gates unchanged.
+No cohort rerun occurred. These are instrumented local in-process measurements
+of logical reads, not physical disk I/O, model cost or a material latency gain.
+
+All 23 stream tests passed. The new regression verifies one read within a group,
+two reads across pages 31→32, and visibility of corruption between invocations
+in the same interpreter. Existing invalid-proof, legacy, scope and recovery
+tests remain in place. Source comparison confirms unchanged atomic writer,
+publication, hooks and full proof authorities, so the prior process-death
+evidence is reused only for those identical mechanisms. This is not hardware
+power-loss testing or protection against non-cooperating external file changes.
+
+The changed handler passed one fresh Windows native root on CLI
+0.164.0-alpha.11.1, requesting GPT-6.1 Sol medium: 3/3 MATCH, exact 128-byte
+content, fresh check/close and null terminal commands. It used nine native shell
+calls in 76.4 seconds, with no page retry. The original `request_unrecognized`
+diagnostic remains recorded. This fixture covers one group; cross-group coverage
+is synthetic. Requested model configuration is not backend attestation, and
+delivery acceptance does not qualify scientific results or general model behavior.
+
 ## Accepted pre-rename verification
 
 CI run [35818855390](https://github.com/kageyoru08/evrik/actions/runs/35818855390), attempt 1, reports all six jobs successful for the frozen payload commit: four runner OS/Python combinations and native distribution lifecycle checks on Windows and Ubuntu. Independent review accepted all 134 downloaded evidence files, including 104 passed fault/collision reports and 79 tests in each runner combination; one Windows skip and two Ubuntu skips are platform-specific. Development-branch public-origin steps are skipped and do not count as public release verification.
