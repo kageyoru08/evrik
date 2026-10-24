@@ -1465,6 +1465,10 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
             fields |= {"reader_transport", "latest_sources"}
         if isinstance(item, dict) and "reader_call_template" in item:
             fields.add("reader_call_template")
+        if isinstance(item, dict) and "reader_index" in item:
+            fields.add("reader_index")
+            if item["reader_index"] != "page-cache-v1" or item.get("reader_transport") != "stream-v2":
+                raise ResearchError("Invalid reader index format")
         if isinstance(item, dict) and item.get("reader_transport") in STREAM_TRANSPORTS:
             fields |= {"scope_version", "next_command", "hook_root"}
         exact_keys(item, fields, "evidence activation")
@@ -1511,6 +1515,49 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
     if any(item["state"] != "closed" for item in state["activations"][:-1]):
         raise ResearchError("Prior evidence activation is not closed")
     return state
+
+
+def evidence_file_stamp(path: Path) -> list[int]:
+    info = path.stat()
+    return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def evidence_cache_activation(directory: Path, state: dict) -> None:
+    activation = state["activations"][-1]
+    if activation.get("reader_index") == "page-cache-v1":
+        evidence_write(safe_path(directory, "reader-state.json"), {
+            "project": state["project"], "session_id": state["session_id"],
+            "session_stamp": evidence_file_stamp(safe_path(directory, "session.json")),
+            "scope_stamp": evidence_file_stamp(safe_path(directory, f"scope-{activation['id']}-{activation['scope_version']}.json")),
+            "activation": {key: value for key, value in activation.items() if key != "artifacts"}})
+
+
+def evidence_save_session(directory: Path, state: dict) -> None:
+    evidence_write(safe_path(directory, "session.json"), state)
+    evidence_cache_activation(directory, state)
+
+
+def evidence_reader_activation(project: Path, directory: Path, session_id: str, *, refresh: bool = False) -> dict | None:
+    """Reader routing cache only. Full session and scope remain check/close authority."""
+    path = safe_path(directory, "reader-state.json")
+    if path.exists():
+        cache = evidence_read(path)
+        exact_keys(cache, {"project", "session_id", "session_stamp", "scope_stamp", "activation"}, "reader state cache")
+        activation = cache["activation"]
+        if (cache["project"] != str(project) or cache["session_id"] != session_id
+                or not isinstance(activation, dict) or activation.get("reader_index") != "page-cache-v1"
+                or not re.fullmatch(r"[0-9a-f]{32}", str(activation.get("id")))
+                or type(activation.get("scope_version")) is not int):
+            raise ResearchError("Invalid reader cache binding")
+        # Metadata invalidates this cache; it never establishes evidence identity.
+        if (cache["session_stamp"] == evidence_file_stamp(safe_path(directory, "session.json"))
+                and cache["scope_stamp"] == evidence_file_stamp(safe_path(directory,
+                    f"scope-{activation['id']}-{activation['scope_version']}.json"))):
+            return activation
+    state = evidence_session(project, directory, session_id)
+    if state is not None and refresh:
+        evidence_cache_activation(directory, state)
+    return state["activations"][-1] if state else None
 
 
 def evidence_dependencies(project: Path, storage: Path, experiment: bool) -> dict:
@@ -1824,6 +1871,19 @@ def evidence_blob(directory: Path, raw: bytes) -> str:
     return blob_id
 
 
+def evidence_part_frame(directory: Path, activation: dict, receipt_id: str, page: dict, last_unreused: int) -> dict:
+    part = page["part"]
+    raw = safe_path(directory, "blobs", part["sha256"]).read_bytes()
+    if len(raw) != part["bytes"] or hashlib.sha256(raw).hexdigest() != part["sha256"]:
+        raise ResearchError("Reader part bytes changed")
+    frame = evidence_reader_frame(activation, "readback", receipt_id, {**page, "text": raw.decode("utf-8")}, None)
+    frame["next_command"] = activation["next_command"] if page["index"] < last_unreused else None
+    frame["next_functions_exec_source"] = evidence_reader_call_source(frame["next_command"])
+    if len(evidence_output(frame)) > READER_OUTPUT_LIMIT:
+        raise ResearchError("Reader frame exceeds the complete native output limit")
+    return frame
+
+
 class EvidenceFrames:
     """A bounded, lazy reader over an immutable content-addressed manifest."""
 
@@ -1864,18 +1924,9 @@ class EvidenceFrames:
             raise IndexError(index)
         if index in self.frames:
             return self.frames[index]
-        part = self.parts[index]
-        raw = safe_path(self.directory, "blobs", part["sha256"]).read_bytes()
-        if len(raw) != part["bytes"] or hashlib.sha256(raw).hexdigest() != part["sha256"]:
-            raise ResearchError("Reader part bytes changed")
-        frame = evidence_reader_frame(self.activation, "readback", self.receipt_id,
+        frame = evidence_part_frame(self.directory, self.activation, self.receipt_id,
             {"index": index, "count": len(self.parts), "offset": self.offsets[index],
-             "total_bytes": self.total_bytes, "text": raw.decode("utf-8"), "part": part},
-            index + 1 if index + 1 < len(self.parts) else None)
-        frame["next_command"] = self.activation["next_command"] if index < self.last_unreused else None
-        frame["next_functions_exec_source"] = evidence_reader_call_source(frame["next_command"])
-        if len(evidence_output(frame)) > READER_OUTPUT_LIMIT:
-            raise ResearchError("Reader frame exceeds the complete native output limit")
+             "total_bytes": self.total_bytes, "part": self.parts[index]}, self.last_unreused)
         self.frames[index] = frame
         return frame
 
@@ -1983,20 +2034,22 @@ def evidence_stream_matches(directory: Path, activation: dict, receipt_id: str, 
     present = {item["index"] for item in matches}
     path = safe_path(directory, f"reuse-{receipt_id}.json")
     reused = evidence_read(path)["pages"] if path.exists() else {}
+    units = {unit["name"]: unit["sha256"] for unit in bundle["units"]}
     prior = {}
     for index, source in reused.items():
+        if not isinstance(index, str) or not re.fullmatch(r"0|[1-9][0-9]*", index):
+            raise ResearchError("Invalid reused page index")
         index = int(index)
         if index in present:
             continue
         if source["receipt_id"] not in prior:
             old = evidence_reader_bundle(directory, activation, "readback", source["receipt_id"])
             _, old_matches = evidence_page_matches(directory, activation, "readback", source["receipt_id"], old)
-            prior[source["receipt_id"]] = old, old_matches
-        old, old_matches = prior[source["receipt_id"]]
-        old_units = {unit["name"]: unit["sha256"] for unit in old["units"]}
-        units = {unit["name"]: unit["sha256"] for unit in bundle["units"]}
+            prior[source["receipt_id"]] = (old, {(match["index"], match["call"]) for match in old_matches},
+                                          {unit["name"]: unit["sha256"] for unit in old["units"]})
+        old, old_matches, old_units = prior[source["receipt_id"]]
         if (not 0 <= index < len(frames) or bundle["parts"][index]["unit"] == "manifest"
-                or {"index": source["index"], "call": source["call"]} not in old_matches
+                or type(source["index"]) is not int or (source["index"], source["call"]) not in old_matches
                 or old["parts"][source["index"]] != bundle["parts"][index]
                 or old_units.get(bundle["parts"][index]["unit"]) != units.get(bundle["parts"][index]["unit"])):
             raise ResearchError("Reused page lacks identical content and native proof")
@@ -2013,6 +2066,80 @@ def evidence_pending_pages(directory: Path, receipt_id: str, bundle: dict) -> li
     if reuse.exists():
         present.update(int(index) for index in evidence_read(reuse)["pages"])
     return [index for index in range(len(bundle["parts"])) if index not in present]
+
+
+def evidence_index_create(directory: Path, activation: dict, receipt_id: str, frames: EvidenceFrames) -> None:
+    """Derived page cache, never an authority for aggregate native coverage."""
+    folder = safe_path(directory, f"index-{receipt_id}")
+    folder.mkdir(exist_ok=True)
+    following = None
+    for index in reversed(range(len(frames))):
+        evidence_write(safe_path(folder, f"{index}.json"), {
+            "page": {"index": index, "count": len(frames), "offset": frames.offsets[index],
+                     "total_bytes": frames.total_bytes, "part": frames.parts[index]},
+            "following": following}, immutable=True)
+        if index not in frames.reused:
+            following = index
+    evidence_write(safe_path(folder, "header.json"), {
+        "receipt_id": receipt_id, "generation": activation["id"], "scope_version": activation["scope_version"],
+        "count": len(frames), "total_bytes": frames.total_bytes, "last_unreused": frames.last_unreused}, immutable=True)
+
+
+def evidence_index_header(directory: Path, activation: dict, receipt_id: str) -> dict:
+    if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
+        raise ResearchError("Invalid indexed reader receipt")
+    header = evidence_read(safe_path(directory, f"index-{receipt_id}", "header.json"))
+    exact_keys(header, {"receipt_id", "generation", "scope_version", "count", "total_bytes", "last_unreused"}, "reader index")
+    if (header["receipt_id"] != receipt_id or header["generation"] != activation["id"]
+            or header["scope_version"] != activation["scope_version"]
+            or any(type(header[key]) is not int for key in ("count", "total_bytes", "last_unreused"))
+            or header["count"] < 1 or header["total_bytes"] < 0
+            or not 0 <= header["last_unreused"] < header["count"]):
+        raise ResearchError("Reader index binding mismatch")
+    return header
+
+
+def evidence_index_page(directory: Path, header: dict, index: int) -> dict:
+    if type(index) is not int or not 0 <= index < header["count"]:
+        raise ResearchError("Reader page is outside the saved index")
+    descriptor = evidence_read(safe_path(directory, f"index-{header['receipt_id']}", f"{index}.json"))
+    exact_keys(descriptor, {"page", "following"}, "reader page descriptor")
+    page, following = descriptor["page"], descriptor["following"]
+    exact_keys(page, {"index", "count", "offset", "total_bytes", "part"}, "indexed page")
+    part = page["part"]
+    exact_keys(part, {"unit", "offset", "bytes", "sha256"}, "indexed part")
+    if (page["index"] != index or page["count"] != header["count"] or page["total_bytes"] != header["total_bytes"]
+            or any(type(page[key]) is not int for key in ("index", "count", "offset", "total_bytes"))
+            or not 0 <= page["offset"] <= header["total_bytes"]
+            or type(part["offset"]) is not int or part["offset"] < 0
+            or type(part["bytes"]) is not int or not 0 <= part["bytes"] <= READER_TEXT_LIMIT
+            or not isinstance(part["unit"], str) or not re.fullmatch(r"[0-9a-f]{64}", str(part["sha256"]))
+            or (following is not None and (type(following) is not int or not index < following < header["count"]))):
+        raise ResearchError("Invalid indexed page descriptor")
+    return descriptor
+
+
+def evidence_index_frame(directory: Path, activation: dict, receipt_id: str, index: int) -> tuple[dict, dict]:
+    header = evidence_index_header(directory, activation, receipt_id)
+    page = evidence_index_page(directory, header, index)["page"]
+    return header, evidence_part_frame(directory, activation, receipt_id, page, header["last_unreused"])
+
+
+def evidence_index_pending(directory: Path, header: dict) -> int | None:
+    path = safe_path(directory, f"index-{header['receipt_id']}", "cursor.json")
+    if not path.exists():
+        return None
+    cursor = evidence_read(path)
+    exact_keys(cursor, {"next"}, "reader cursor")
+    index = original = cursor["next"]
+    if index is not None and (type(index) is not int or not 0 <= index < header["count"]):
+        raise ResearchError("Invalid reader cursor")
+    # Markers advance scheduling only. Check/close independently validate proof.
+    while index is not None and safe_path(directory, f"page-matched-readback-{header['receipt_id']}-{index}.json").exists():
+        index = evidence_index_page(directory, header, index)["following"]
+    if index != original:
+        evidence_write(path, {"next": index})
+    return index
 
 
 def evidence_reader_current(project: Path, storage: Path, directory: Path, activation: dict,
@@ -2133,6 +2260,19 @@ def evidence_action(args: argparse.Namespace) -> dict:
     elif not safe_path(directory, "session.json").exists():
         return {"status": "not_activated", "ready_to_close": False, "semantic_review_verified": False}
     with project_lock(storage):
+        if args.operation == "next" or (args.operation == "readback" and args.receipt is not None):
+            cached = evidence_reader_activation(project, directory, session_id, refresh=True)
+            if cached and cached["state"] == "active" and cached.get("reader_index") and cached["latest_readback"]:
+                if cached["handler_sha256"] != file_digest(Path(__file__)):
+                    raise ResearchError("Evidence handler changed; preserve and close the old activation")
+                receipt_id = args.receipt if args.operation == "readback" else cached["latest_readback"]
+                header = evidence_index_header(directory, cached, receipt_id)
+                evidence_reader_current(project, storage, directory, cached, "readback", receipt_id, header)
+                index = args.page if args.operation == "readback" else evidence_index_pending(directory, header)
+                if index is not None:
+                    _, frame = evidence_index_frame(directory, cached, receipt_id, index)
+                    return frame
+        # State-changing/boundary paths always load the complete authority.
         state = evidence_session(project, directory, session_id)
         activation = state["activations"][-1] if state else None
         if args.operation == "activate":
@@ -2155,6 +2295,8 @@ def evidence_action(args: argparse.Namespace) -> dict:
                               "opened_at": utc_now(), "closed_at": None, "reason": None, "latest_readback": None,
                               "reader_transport": args.transport, "latest_sources": None,
                               "reader_call_template": "functions-exec-v1"}
+                if args.transport == "stream-v2":
+                    activation["reader_index"] = "page-cache-v1"
                 evidence_web_route(project, directory, activation)
                 if args.transport in STREAM_TRANSPORTS:
                     activation["scope_version"] = 1
@@ -2165,7 +2307,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
                 state = state or {"schema_version": 1, "project": str(project), "session_id": session_id,
                                   "owner_thread_id": session_id, "activations": []}
                 state["activations"].append(activation)
-                evidence_write(safe_path(directory, "session.json"), state)
+                evidence_save_session(directory, state)
             evidence_web_route(project, directory, activation)
             return {"status": "active", "session_id": session_id, "generation": activation["id"],
                     "handler_sha256": activation["handler_sha256"],
@@ -2211,7 +2353,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     {"version": version, "artifacts": artifacts, "previous": activation["artifacts"],
                      "reason": args.reason}, immutable=True)
                 activation.update(artifacts=artifacts, scope_version=version, latest_readback=None)
-                evidence_write(safe_path(directory, "session.json"), state)
+                evidence_save_session(directory, state)
             return {"status": "scope_revised", "scope_version": activation["scope_version"],
                     "artifacts": artifacts, "resume_command": activation["next_command"]}
         resume = args.operation == "next"
@@ -2250,11 +2392,16 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     evidence_write(path, bundle, immutable=True)
                     evidence_stream_reuse(directory, activation, receipt_id, bundle)
                 frames = evidence_reader_pages(activation, "readback", receipt_id, bundle, directory)
+                if activation.get("reader_index"):
+                    evidence_index_create(directory, activation, receipt_id, frames)
                 activation["latest_readback"] = receipt_id
-                evidence_write(safe_path(directory, "session.json"), state)
+                evidence_save_session(directory, state)
                 if activation.get("reader_transport") == "stream-v2":
                     pending = evidence_pending_pages(directory, receipt_id, bundle)
                     index = pending[0] if resume and pending else 0
+                    if activation.get("reader_index"):
+                        evidence_write(safe_path(directory, f"index-{receipt_id}", "cursor.json"),
+                                       {"next": pending[0] if pending else None})
                 else:
                     _, matches = evidence_stream_matches(directory, activation, receipt_id, bundle)
                     present = {match["index"] for match in matches}
@@ -2282,7 +2429,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
             frames = evidence_reader_pages(activation, args.operation, receipt_id, bundle, directory)
             evidence_write(safe_path(directory, f"{args.operation}-{receipt_id}.json"), bundle, immutable=True)
             activation["latest_readback" if args.operation == "readback" else "latest_sources"] = receipt_id
-            evidence_write(safe_path(directory, "session.json"), state)
+            evidence_save_session(directory, state)
             return frames[0]
         validated = {}
         status = evidence_status(project, storage, directory, activation, validated=validated)
@@ -2296,7 +2443,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
                                validated["readback"], immutable=True)
             activation.update(state="closed", closed_at=utc_now(),
                               reason=args.reason if args.incomplete else "Current evidence and native response matched; semantics not verified")
-            evidence_write(safe_path(directory, "session.json"), state)
+            evidence_save_session(directory, state)
             for commands in (status, status.get("reader_progress", {}), status.get("sources", {}),
                              status.get("sources", {}).get("reader_progress", {})):
                 for key in commands:
@@ -2453,7 +2600,9 @@ def evidence_hook() -> dict:
         hook_root = project
         session_id = evidence_id(event.get("session_id"))
         tool_input = event.get("tool_input")
-        target = evidence_command_project(tool_input.get("command")) if isinstance(tool_input, dict) and name == "Bash" else None
+        parsed = evidence_command_argv(tool_input.get("command")) if isinstance(tool_input, dict) and name == "Bash" else None
+        target = parsed[8] if parsed else None
+        cache_reader = bool(parsed and parsed[6] in {"readback", "next"})
         route = None
         if name == "webrun":
             route_path = safe_path(storage, "evidence", session_id, "web-route.json")
@@ -2465,10 +2614,13 @@ def evidence_hook() -> dict:
         if target:
             project, storage = evidence_paths(target)
         directory = safe_path(storage, "evidence", session_id)
-        state = evidence_session(project, directory, session_id)
-        if state is None or state["activations"][-1]["state"] != "active":
+        if cache_reader:
+            activation = evidence_reader_activation(project, directory, session_id)
+        else:
+            state = evidence_session(project, directory, session_id)
+            activation = state["activations"][-1] if state else None
+        if activation is None or activation["state"] != "active":
             return {}
-        activation = state["activations"][-1]
         if route and (route["generation"] != activation["id"] or activation.get("hook_root") != str(hook_root)):
             return {}
         if any(key in event for key in ("agent_id", "agent_type")):
@@ -2494,8 +2646,11 @@ def evidence_hook() -> dict:
             raise ResearchError("Public web hook root differs from the bound native workspace")
         failure_stage = "attempt_binding"
         with project_lock(storage, wait_seconds=1):
-            state = evidence_session(project, directory, session_id)
-            activation = state["activations"][-1]
+            if cache_reader:
+                activation = evidence_reader_activation(project, directory, session_id)
+            else:
+                state = evidence_session(project, directory, session_id)
+                activation = state["activations"][-1]
             if activation["state"] != "active":
                 return {}
             tool_input = event.get("tool_input")
@@ -2518,15 +2673,21 @@ def evidence_hook() -> dict:
                 failure_stage = "handler_identity"
                 raise ResearchError("Handler identity changed")
             frames = None
+            indexed = reader == "readback" and activation.get("reader_index") == "page-cache-v1"
             if reader and reader_request[1] is not None:
                 failure_stage = "reader_saved_bundle"
-                requested_bundle = evidence_reader_bundle(directory, activation, reader, reader_request[1])
+                if indexed:
+                    requested_bundle, expected = evidence_index_frame(directory, activation, reader_request[1], reader_request[2])
+                    frames = {reader_request[2]: expected}
+                else:
+                    requested_bundle = evidence_reader_bundle(directory, activation, reader, reader_request[1])
                 failure_stage = "reader_current_evidence"
                 evidence_reader_current(project, storage, directory, activation, reader, reader_request[1], requested_bundle)
                 failure_stage = "reader_response_match"
-                frames = evidence_reader_pages(activation, reader, reader_request[1], requested_bundle, directory)
-                if reader_request[2] >= len(frames):
-                    raise ResearchError("Reader page is outside the saved bundle")
+                if not indexed:
+                    frames = evidence_reader_pages(activation, reader, reader_request[1], requested_bundle, directory)
+                    if reader_request[2] >= len(frames):
+                        raise ResearchError("Reader page is outside the saved bundle")
                 failure_stage = "attempt_binding"
             tool_id = event.get("tool_use_id")
             if not isinstance(tool_id, str) or not tool_id or len(tool_id) > 256:
@@ -2571,25 +2732,29 @@ def evidence_hook() -> dict:
                     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
                         raise ResearchError("Invalid reader receipt")
                     failure_stage = "reader_saved_bundle"
-                    bundle = evidence_reader_bundle(directory, activation, reader, receipt_id)
-                    failure_stage = "reader_response_match"
-                    # Reuse only this invocation's frames after the independent bundle read.
-                    if frames is None or reader_request[1] != receipt_id or requested_bundle != bundle:
-                        frames = evidence_reader_pages(activation, reader, receipt_id, bundle, directory)
                     index = returned["page"]["index"]
-                    if type(index) is not int or not 0 <= index < len(frames):
-                        failure_stage = "reader_page_index"
-                        raise ResearchError("Reader page index is invalid")
+                    if indexed:
+                        bundle, expected = evidence_index_frame(directory, activation, receipt_id, index)
+                    else:
+                        bundle = evidence_reader_bundle(directory, activation, reader, receipt_id)
+                        failure_stage = "reader_response_match"
+                        # Reuse only this invocation's frames after the independent bundle read.
+                        if frames is None or reader_request[1] != receipt_id or requested_bundle != bundle:
+                            frames = evidence_reader_pages(activation, reader, receipt_id, bundle, directory)
+                        if type(index) is not int or not 0 <= index < len(frames):
+                            failure_stage = "reader_page_index"
+                            raise ResearchError("Reader page index is invalid")
+                        expected = frames[index]
                     if reader_request[1] is not None and reader_request[1] != receipt_id:
                         failure_stage = "reader_receipt_identity"
                         raise ResearchError("Reader receipt differs from its request")
                     if reader_request[2] is not None and reader_request[2] != index:
                         failure_stage = "reader_requested_page"
                         raise ResearchError("Reader page differs from its request")
-                    if returned != frames[index]:
+                    if returned != expected:
                         failure_stage = "reader_frame_fields"
                         raise ResearchError("Reader frame fields differ from saved evidence")
-                    if response != evidence_output(frames[index]).decode("utf-8"):
+                    if response != evidence_output(expected).decode("utf-8"):
                         failure_stage = "reader_wire_bytes"
                         raise ResearchError("Reader response differs from saved evidence")
                     failure_stage = "reader_current_evidence"
@@ -2619,6 +2784,8 @@ def evidence_hook() -> dict:
                 page_path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
                 if not page_path.exists():
                     evidence_write(page_path, record, immutable=True)
+                if indexed:
+                    evidence_index_pending(directory, bundle)
                 # stream-v2 records only this page here. Full proof/freshness checks
                 # belong to check/close, outside the short native hook timeout.
                 complete = reader != "readback" or activation.get("reader_transport") != "stream-v2"

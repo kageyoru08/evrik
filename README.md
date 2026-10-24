@@ -91,6 +91,10 @@ validate their saved snapshot; full current-evidence and native-proof validation
 runs at `check`/`close`, outside the hook timeout. Snapshot MATCH does not itself
 mean current freshness. Safe literal path/quote variants are recognized, while
 shell expressions and compound reader commands remain unsupported.
+New activations use derived page descriptors and a resumable cursor to avoid
+rescanning the entire manifest and progress directory for each page. These
+caches grant no aggregate native credit; `check`/`close` still validate the
+complete saved content, original native proofs and current evidence.
 `evidence revise` versions
 the full required scope and reuses native proof only for identical units in the
 same activation. Hook diagnostics preserve recognition/matching stages and the

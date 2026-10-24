@@ -199,6 +199,8 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
         activation = self.action("activate")
         command = activation["resume_command"]
         with mock.patch.object(r, "evidence_inventory", wraps=r.evidence_inventory) as inventories, \
+                mock.patch.object(r, "evidence_session", wraps=r.evidence_session) as sessions, \
+                mock.patch.object(r, "evidence_reader_bundle", wraps=r.evidence_reader_bundle) as bundles, \
                 mock.patch.object(r.EvidenceFrames, "__getitem__", autospec=True,
                                   side_effect=r.EvidenceFrames.__getitem__) as reads:
             frames = []
@@ -207,6 +209,8 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
                 if frames[-1]["next_command"] is None:
                     break
             self.assertEqual(inventories.call_count, 1)
+            self.assertEqual(sessions.call_count, 1)
+            self.assertEqual(bundles.call_count, 0)
             self.assertLessEqual(reads.call_count, 3 * len(frames))
         self.assertFalse((self.directory / f"matched-{frames[-1]['receipt_id']}.json").exists())
         self.assertTrue(self.action("check")["ready_to_close"])
@@ -264,6 +268,81 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
         self.assertFalse(self.action("check")["ready_to_close"])
         with self.assertRaises(r.ResearchError):
             self.action("close")
+
+    def test_index_resume_survives_cursor_loss_and_out_of_order_delivery(self):
+        (self.project / "report.md").write_bytes(b"x" * (r.READER_TEXT_LIMIT * 3))
+        activation = self.action("activate")
+        command = activation["resume_command"]
+        first = self.page(command)
+        receipt = first["receipt_id"]
+        cursor = self.directory / f"index-{receipt}" / "cursor.json"
+        pending = self.action("next")
+        self.assertEqual(self.action("next"), pending)  # Emission alone cannot advance.
+        self.assertEqual(self.hook("PostToolUse", command, r.evidence_output(first).decode()), {})
+        self.assertEqual(self.action("next"), pending)  # Duplicate delivery cannot advance twice.
+        later = first["page"]["count"] - 1
+        literal = activation["readback_command"] + f" --receipt {receipt} --page {later}"
+        self.calls += 1
+        self.assertEqual(self.hook("PreToolUse", literal), {})
+        frame = self.action("readback", receipt=receipt, page=later)
+        self.assertEqual(self.hook("PostToolUse", literal, r.evidence_output(frame).decode()), {})
+        self.assertEqual(self.action("next"), pending)
+        # A durable page marker followed by a lost cursor update must resume correctly.
+        r.evidence_write(cursor, {"next": 0})
+        self.assertEqual(self.action("next"), pending)
+        cursor.unlink()
+        (self.directory / "reader-state.json").unlink()
+        (self.project / "report.md").write_bytes(b"Current artifact changed after capture")
+        self.assertEqual(self.action("next"), pending)
+        for expected_index in range(pending["page"]["index"], later):
+            self.assertEqual(self.page(command)["page"]["index"], expected_index)
+        status = self.action("check")
+        self.assertTrue(status["native_response_matched"])
+        self.assertFalse(status["fresh"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+
+    def test_valid_alternate_cache_blob_cannot_grant_aggregate_native_credit(self):
+        activation = self.action("activate")
+        command = activation["resume_command"]
+        original = self.action("next")
+        receipt = original["receipt_id"]
+        descriptor = self.directory / f"index-{receipt}" / "0.json"
+        value = r.evidence_read(descriptor)
+        raw = b"!" * value["page"]["part"]["bytes"]
+        value["page"]["part"]["sha256"] = r.evidence_blob(self.directory, raw)
+        r.evidence_write(descriptor, value)  # Valid envelope and blob, wrong authoritative content.
+        returned = self.page(command)
+        self.assertNotEqual(returned, original)
+        proof = self.directory / f"page-matched-readback-{receipt}-0.json"
+        saved = proof.read_bytes()
+        self.assertEqual(r.evidence_read(proof)["status"], "reader_page_matched")
+        status = self.action("check")
+        self.assertFalse(status["ready_to_close"])
+        self.assertIn("Invalid native reader page binding", status["issue"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+        self.assertEqual(proof.read_bytes(), saved)
+        self.assertFalse((self.directory / f"matched-{receipt}.json").exists())
+
+    def test_reader_cache_invalidates_on_scope_and_session_changes(self):
+        activation = self.action("activate")
+        first = self.page(activation["resume_command"])
+        cache = self.directory / "reader-state.json"
+        before = cache.read_bytes()
+        (self.project / "addition.md").write_bytes(b"Required new scope")
+        self.action("revise", artifact=["report.md", "addition.md"], reason="Add evidence")
+        cache.write_bytes(before)  # Interrupted cache update after authoritative scope commit.
+        with self.assertRaises(r.ResearchError):
+            self.action("readback", receipt=first["receipt_id"], page=0)
+        self.assertEqual(r.evidence_read(cache)["activation"]["scope_version"], 2)
+        self.assertEqual(r.evidence_read(self.directory / "session.json")["activations"][-1]["artifacts"],
+                         ["addition.md", "report.md"])
+        stale = cache.read_bytes()
+        self.action("close", incomplete=True, reason="Bounded cache invalidation test")
+        cache.write_bytes(stale)
+        self.assertEqual(self.action("next")["status"], "closed")
+        self.assertEqual(r.evidence_read(cache)["activation"]["state"], "closed")
 
     def test_text_metadata_and_unsupported_public_response_remain_recoverable(self):
         activation = self.action("activate", public_web=True, record="report.md")

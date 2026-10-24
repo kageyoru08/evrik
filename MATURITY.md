@@ -20,11 +20,37 @@ Two synthetic fixtures with 10 and 18 pages measured pagination inventories
 at 20/36 before versus 1/1 after, archive digest passes at 40/72 versus 2/2,
 and frame fetches at 130/378 versus 30/54. Full check and close still perform
 freshness/proof validation. These count logical work, not physical disk I/O,
-model tokens or savings on a research project. Receipt/progress metadata can
-still incur quadratic pagination work. A read-only repack of a saved companion
+model tokens or savings on a research project. That first repair left quadratic
+receipt/progress metadata scans, addressed by the follow-up below. A read-only repack of a saved companion
 reconstructed its complete original bytes; it grants no new native credit.
 The external maintenance record binds exact payload hashes, first failures,
 native receipts, local measurements and public distribution verification.
+
+### Metadata pagination follow-up
+
+New `stream-v2` activations use a derived page index, compact reader state and
+a cursor updated only after a durable native page marker. These caches select
+pages; full check/close still reconstruct the authoritative frames, validate
+every original native Pre/Post proof and check current source freshness.
+The index adds one small descriptor file per page. Missing state/cursor caches
+recover from saved authority; malformed descriptors cannot establish closure.
+
+Six synthetic fixtures measured one saved snapshot at 32, 64 and 128 artifact
+chunks, separately in one artifact and in 32/64/128 artifacts. For the latter,
+34/67/132 pages read 1,299,638/4,409,420/15,994,536 logical metadata bytes before
+versus 370,793/730,404/1,440,380 after. Manifest part-validation visits fell from
+2,312/8,978/34,848 to 34/67/132; pagination directory entries fell from
+3,845/14,207/53,727 to 21/21/21. Full session loading occurred once per snapshot.
+Single-artifact results also scaled with page count. Counts include snapshot
+and index creation; full check/close are separately measured and retain their
+complete evidence checks. These are logical operations, not physical I/O,
+model-token costs or a general bound on growing history and repeated checks.
+No Garlic experiment, training or scientific qualification was repeated.
+One fresh Windows native root task on CLI 0.164.0-alpha.11.1, requesting
+GPT-6.1 Sol at medium effort, exercised the indexed reader through trusted
+installed hooks: 4/4 pages MATCH, exhausted cursor, fresh check/close and null
+terminal commands. Exact fixture bytes and original diagnostics were retained.
+This is directed delivery evidence, separate from synthetic performance counts.
 
 ## Accepted pre-rename verification
 
