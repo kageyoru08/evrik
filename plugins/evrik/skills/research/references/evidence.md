@@ -190,7 +190,7 @@ The frame explicitly reports current evidence as not checked. `check` and
 ordinary `close` perform full current source/dependency/scope/handler and native
 proof validation outside the hook's five-second window. A snapshot MATCH does
 not attest freshness at each page or transient changes between those boundaries.
-New activations add a derived per-page index and resumable cursor. A compact
+New activations add a derived page index and resumable cursor. A compact
 reader-state cache avoids loading full activation history and artifact scope
 on every page; session/scope file changes invalidate it. The index, cursor,
 file stamps and progress markers are scheduling hints, never native credit.
@@ -202,10 +202,17 @@ the final delivered page, including after closure; completion comes from full
 proof validation, not the cursor value. A lost cursor update is recoverable.
 At `check`/`close`, the complete saved manifest, unit/blob identities, original
 Pre/Post bindings and current evidence are independently validated without
-trusting these caches. Index creation adds one small file per page. Linear
-pagination measurements apply to one snapshot; history/reuse and full boundary
-validation still depend on their evidence volume. Legacy activations without
-the index retain their original path.
+trusting these caches. New `page-cache-v2` indexes store at most 32 descriptors
+per immutable file, using the same atomic flush/fsync/replace writer and publishing
+the header only after every group is durable. Readers validate one group at a
+time; an oversize-file check precedes parsing. This reduces creation flushes but
+reads more metadata per page. Interrupted creation preserves completed groups;
+conflicting contents and missing/malformed published groups fail closed.
+Existing `page-cache-v1` indexes retain individual files, and activations without
+an index retain their original path. Changed handlers still require a fresh
+activation; grouping never migrates historical native credit. Linear pagination
+measurements apply to one snapshot; history/reuse and full boundary validation
+still depend on their evidence volume.
 
 `check` compares current deliverables and attached evidence with that
 readback. Relevant changes require another readback; never mix pages from

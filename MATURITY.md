@@ -70,6 +70,41 @@ instrumented timings exclude native process/model latency and do not establish
 universal speed or cost savings. All samples and original proof boundaries are
 retained in the external maintenance record; no Garlic experiment was repeated.
 
+### Descriptor batching
+
+A separate startup profile attributed roughly 74–76% of descriptor creation
+time to file fsync. The subsequent explicitly scoped batching change introduces
+`page-cache-v2`: up to 32 descriptors per immutable JSON file, with the existing
+atomic writer and header-last publication. Legacy individual-file indexes and
+full authoritative native check/close remain supported. File-size checks and
+group validation bound normal lookup to one group; this is not a sandbox against
+external file replacement between stat and read.
+
+Five alternating baseline/candidate pairs per size measured creation medians
+of 20.9→8.9 ms (128 bytes), 25.6→9.4 ms (8 KiB), 70.7→9.0 ms (64 KiB), and
+178.6→12.4 ms (192 KiB, 34 pages). Creation file fsync counts were 4→2, 5→2,
+14→2 and 35→3. All 40 samples completed synthetic check/close. Pagination
+medians were 383→350, 499→470, 1490→1353 and 3867→3523 ms respectively.
+These host-specific in-process timings include instrumentation, not native
+process/model latency or cost. Logical metadata reads increased, reaching about
+0.36→1.02 MB at 34 pages because each lookup reads a group. No batch-size tuning
+or favorable measured rerun was used; the initial source-path precondition
+failure occurred before any sample and remains in the maintenance record.
+
+Targeted tests cover group boundaries, legacy frames, immutable collision,
+corruption, oversize/missing groups, forged native credit, and injected failures
+at fsync, group/header, session/cache and cursor publication. Two controlled
+process deaths preserved completed groups and resumed at page zero without
+granting native credit. This verifies bounded process recovery and retains the
+existing writer's durability protocol; it is not a hardware power-loss test.
+The 22 stream tests passed locally. One fresh Windows native root on CLI
+0.164.0-alpha.11.1, requesting GPT-6.1 Sol medium, used the installed trusted
+hooks and closed with 3/3 MATCH, exact 128-byte content, fresh evidence and null
+terminal commands. Its page-cache-v2 index contained one group; cross-group
+coverage is synthetic. Original diagnostics remain recorded. This is delivery
+evidence for the changed handler, not scientific acceptance or model attribution
+beyond the requested configuration.
+
 ## Accepted pre-rename verification
 
 CI run [35818855390](https://github.com/kageyoru08/evrik/actions/runs/35818855390), attempt 1, reports all six jobs successful for the frozen payload commit: four runner OS/Python combinations and native distribution lifecycle checks on Windows and Ubuntu. Independent review accepted all 134 downloaded evidence files, including 104 passed fault/collision reports and 79 tests in each runner combination; one Windows skip and two Ubuntu skips are platform-specific. Development-branch public-origin steps are skipped and do not count as public release verification.

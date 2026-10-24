@@ -96,15 +96,17 @@ rescanning the entire manifest and progress directory for each page. These
 caches grant no aggregate native credit; `check`/`close` still validate the
 complete saved content, original native proofs and current evidence.
 
-Initial descriptor creation still has a durability cost. A bounded Windows
-profile on 2026-10-24 used five fresh snapshots at each of 128 bytes, 8 KiB and
-64 KiB (3, 4 and 13 pages), with synthetic CLI/hooks and successful full
-check/close. Median creation times were 21.1, 25.9 and 71.7 ms; `fsync` accounted
-for roughly 74–76%, while path validation accounted for roughly 9–10%.
-These nested, instrumented in-process timings are host-specific, not native
-process/model latency. The profile did not establish a safe, worthwhile startup
-optimization, so atomic publication, flush/fsync, path checks and immutable
-collision handling remain unchanged.
+New `page-cache-v2` indexes group at most 32 descriptors in each immutable file.
+Each file still uses the existing atomic flush/fsync/replace writer; the header
+is published after all groups finish. This reduces creation flushes without
+making the cache an authority for native proof. Legacy indexes retain their
+individual files. A bounded Windows comparison used five alternating pairs per
+input size: median creation time fell from 20.9 to 8.9 ms at 128 bytes and from
+178.6 to 12.4 ms at 192 KiB (34 pages, crossing a group boundary). All samples
+completed synthetic check/close. Groups increase metadata read bytes; pagination
+medians still improved at all four measured sizes. These instrumented in-process
+timings are host-specific, not native process/model latency or cost. See the
+[maintenance record](MATURITY.md#descriptor-batching) for scope and limitations.
 
 `evidence revise` versions
 the full required scope and reuses native proof only for identical units in the

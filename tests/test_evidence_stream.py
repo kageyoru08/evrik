@@ -310,10 +310,10 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
         command = activation["resume_command"]
         original = self.action("next")
         receipt = original["receipt_id"]
-        descriptor = self.directory / f"index-{receipt}" / "0.json"
+        descriptor = self.directory / f"index-{receipt}" / "batch-0.json"
         value = r.evidence_read(descriptor)
-        raw = b"!" * value["page"]["part"]["bytes"]
-        value["page"]["part"]["sha256"] = r.evidence_blob(self.directory, raw)
+        raw = b"!" * value["pages"][0]["page"]["part"]["bytes"]
+        value["pages"][0]["page"]["part"]["sha256"] = r.evidence_blob(self.directory, raw)
         r.evidence_write(descriptor, value)  # Valid envelope and blob, wrong authoritative content.
         returned = self.page(command)
         self.assertNotEqual(returned, original)
@@ -327,6 +327,104 @@ class SnapshotEvidenceTests(StreamEvidenceTests):
             self.action("close")
         self.assertEqual(proof.read_bytes(), saved)
         self.assertFalse((self.directory / f"matched-{receipt}.json").exists())
+
+    def test_batch_boundaries_and_legacy_index_preserve_frames(self):
+        (self.project / "report.md").write_bytes(b"x" * (r.READER_TEXT_LIMIT * 32))
+        self.action("activate")
+        first = self.action("next")
+        receipt = first["receipt_id"]
+        state = r.evidence_read(self.directory / "session.json")
+        activation = state["activations"][-1]
+        bundle = r.evidence_read(self.directory / f"readback-{receipt}.json")
+        authoritative = r.EvidenceFrames(self.directory, activation, receipt, bundle)
+        folder = self.directory / f"index-{receipt}"
+        self.assertEqual([len(r.evidence_read(folder / f"batch-{i}.json")["pages"]) for i in range(2)], [32, 2])
+        for index in (0, 30, 31, 32, 33):
+            self.assertEqual(self.action("readback", receipt=receipt, page=index), authoritative[index])
+        with mock.patch.object(r.os, "fsync", wraps=r.os.fsync) as sync:
+            r.evidence_index_create(self.directory, activation, receipt, authoritative)
+            self.assertEqual(sync.call_count, 0)  # Immutable re-entry needs no rewrite.
+        self.assertFalse(self.action("check")["ready_to_close"])
+        self.action("close", incomplete=True, reason="Synthetic boundary emission without native delivery")
+        (self.project / "report.md").write_bytes(b"legacy index")
+        command = self.action("activate")["resume_command"]
+        state = r.evidence_read(self.directory / "session.json")
+        state["activations"][-1]["reader_index"] = "page-cache-v1"
+        r.evidence_save_session(self.directory, state)
+        frames = self.finish(command)
+        legacy = self.directory / f"index-{frames[0]['receipt_id']}"
+        self.assertTrue((legacy / "0.json").exists())
+        self.assertNotIn("batch_size", r.evidence_read(legacy / "header.json"))
+        self.assertTrue(self.action("close")["ready_to_close"])
+
+    def test_batch_publication_failure_preserves_durable_files_and_recovers(self):
+        (self.project / "report.md").write_bytes(b"x" * (r.READER_TEXT_LIMIT * 32))
+        original_replace, original_create = r.os.replace, r.evidence_index_create
+        boundaries = ("fsync", "batch-0.json", "header.json", "session.json", "reader-state.json", "cursor.json")
+        for number, boundary in enumerate(boundaries):
+            with self.subTest(boundary=boundary):
+                self.session = f"33333333-3333-4333-8333-{number:012d}"
+                self.directory = self.project / ".research/evidence" / self.session
+                with mock.patch.dict(os.environ, CODEX_SESSION_ID=self.session, CODEX_THREAD_ID=self.session):
+                    self.action("activate")
+                    before = (self.directory / "session.json").read_bytes()
+                    def replace(source, destination):
+                        if Path(destination).name == boundary:
+                            raise OSError("Injected publication failure")
+                        return original_replace(source, destination)
+                    def create(*args):
+                        with mock.patch.object(r.os, "fsync", side_effect=OSError("Injected fsync failure")):
+                            return original_create(*args)
+                    target, name, replacement = ((r, "evidence_index_create", create) if boundary == "fsync"
+                                                else (r.os, "replace", replace))
+                    with mock.patch.object(target, name, replacement), self.assertRaisesRegex(OSError, "Injected"):
+                        self.action("next")
+                    folder, = self.directory.glob("index-*")
+                    if boundary in ("fsync", "batch-0.json", "header.json"):
+                        self.assertFalse((folder / "header.json").exists())
+                    else:
+                        self.assertTrue((folder / "header.json").exists())
+                    if boundary not in ("reader-state.json", "cursor.json"):
+                        self.assertEqual((self.directory / "session.json").read_bytes(), before)
+                    saved = {path: path.read_bytes() for path in folder.glob("batch-*.json")}
+                    frame = self.action("next")
+                    self.assertEqual(frame["page"]["index"], 0)
+                    self.assertEqual({path: path.read_bytes() for path in saved}, saved)
+                    self.assertFalse(list(folder.glob("*.tmp")))
+                    self.assertFalse(list(self.directory.glob("page-matched-*.json")))
+                    self.assertFalse(self.action("check")["ready_to_close"])
+
+    def test_batch_corruption_and_immutable_collision_fail_closed(self):
+        self.action("activate")
+        frame = self.action("next")
+        receipt = frame["receipt_id"]
+        path = self.directory / f"index-{receipt}" / "batch-0.json"
+        original = path.read_bytes()
+        original_value = r.evidence_read(path)
+        bad_values = [dict(pages=[]), dict(pages=original_value["pages"][:-1]),
+                      dict(pages=[original_value["pages"][0]] * len(original_value["pages"]))]
+        for value in bad_values:
+            with self.subTest(value=value):
+                r.evidence_write(path, value)
+                with self.assertRaises(r.ResearchError):
+                    self.action("next")
+        path.write_bytes(b"x" * (r.READER_INDEX_LIMIT + 1))
+        with self.assertRaisesRegex(r.ResearchError, "bounded size"):
+            self.action("next")
+        path.unlink()
+        with self.assertRaisesRegex(r.ResearchError, "Cannot read reader descriptor batch"):
+            self.action("next")
+        r.evidence_write(path, bad_values[0])
+        conflict = path.read_bytes()
+        activation = r.evidence_read(self.directory / "session.json")["activations"][-1]
+        frames = r.EvidenceFrames(self.directory, activation, receipt,
+                                  r.evidence_read(self.directory / f"readback-{receipt}.json"))
+        with self.assertRaisesRegex(r.ResearchError, "Conflicting evidence"):
+            r.evidence_index_create(self.directory, activation, receipt, frames)
+        self.assertEqual(path.read_bytes(), conflict)
+        self.assertFalse(self.action("check")["ready_to_close"])
+        path.write_bytes(original)
+        self.assertEqual(self.action("next"), frame)
 
     def test_reader_cache_invalidates_on_scope_and_session_changes(self):
         activation = self.action("activate")

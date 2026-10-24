@@ -1138,6 +1138,9 @@ EVIDENCE_LIMIT = 262144
 STREAM_TRANSPORTS = {"stream-v1", "stream-v2"}
 READER_TEXT_LIMIT = 6144
 READER_OUTPUT_LIMIT = 16384
+READER_INDEX_FORMATS = ("page-cache-v1", "page-cache-v2")
+READER_INDEX_BATCH = 32
+READER_INDEX_LIMIT = READER_INDEX_BATCH * READER_OUTPUT_LIMIT + 1024
 READER_OUTPUT_HINT = (
     "For each generated reader page, request max_output_tokens=16384 or more where supported and preserve "
     "the complete outer result. Frames are capped at 16384 UTF-8 bytes including the final newline; "
@@ -1467,7 +1470,7 @@ def evidence_session(project: Path, directory: Path, session_id: str) -> dict | 
             fields.add("reader_call_template")
         if isinstance(item, dict) and "reader_index" in item:
             fields.add("reader_index")
-            if item["reader_index"] != "page-cache-v1" or item.get("reader_transport") != "stream-v2":
+            if item["reader_index"] not in READER_INDEX_FORMATS or item.get("reader_transport") != "stream-v2":
                 raise ResearchError("Invalid reader index format")
         if isinstance(item, dict) and item.get("reader_transport") in STREAM_TRANSPORTS:
             fields |= {"scope_version", "next_command", "hook_root"}
@@ -1524,7 +1527,7 @@ def evidence_file_stamp(path: Path) -> list[int]:
 
 def evidence_cache_activation(directory: Path, state: dict) -> None:
     activation = state["activations"][-1]
-    if activation.get("reader_index") == "page-cache-v1":
+    if activation.get("reader_index") in READER_INDEX_FORMATS:
         evidence_write(safe_path(directory, "reader-state.json"), {
             "project": state["project"], "session_id": state["session_id"],
             "session_stamp": evidence_file_stamp(safe_path(directory, "session.json")),
@@ -1545,7 +1548,7 @@ def evidence_reader_activation(project: Path, directory: Path, session_id: str, 
         exact_keys(cache, {"project", "session_id", "session_stamp", "scope_stamp", "activation"}, "reader state cache")
         activation = cache["activation"]
         if (cache["project"] != str(project) or cache["session_id"] != session_id
-                or not isinstance(activation, dict) or activation.get("reader_index") != "page-cache-v1"
+                or not isinstance(activation, dict) or activation.get("reader_index") not in READER_INDEX_FORMATS
                 or not re.fullmatch(r"[0-9a-f]{32}", str(activation.get("id")))
                 or type(activation.get("scope_version")) is not int):
             raise ResearchError("Invalid reader cache binding")
@@ -2072,24 +2075,45 @@ def evidence_index_create(directory: Path, activation: dict, receipt_id: str, fr
     """Derived page cache, never an authority for aggregate native coverage."""
     folder = safe_path(directory, f"index-{receipt_id}")
     folder.mkdir(exist_ok=True)
+    batched = activation.get("reader_index") == "page-cache-v2"
+    pages = []
     following = None
     for index in reversed(range(len(frames))):
-        evidence_write(safe_path(folder, f"{index}.json"), {
+        descriptor = {
             "page": {"index": index, "count": len(frames), "offset": frames.offsets[index],
                      "total_bytes": frames.total_bytes, "part": frames.parts[index]},
-            "following": following}, immutable=True)
+            "following": following}
+        if batched:
+            pages.append(descriptor)
+            if index % READER_INDEX_BATCH == 0:
+                value = {"pages": list(reversed(pages))}
+                if len(canonical(value)) > READER_INDEX_LIMIT - 1024:
+                    raise ResearchError("Reader descriptor batch exceeds its bounded size")
+                evidence_write(safe_path(folder, f"batch-{index // READER_INDEX_BATCH}.json"), value, immutable=True)
+                pages.clear()
+        else:
+            evidence_write(safe_path(folder, f"{index}.json"), descriptor, immutable=True)
         if index not in frames.reused:
             following = index
-    evidence_write(safe_path(folder, "header.json"), {
+    header = {
         "receipt_id": receipt_id, "generation": activation["id"], "scope_version": activation["scope_version"],
-        "count": len(frames), "total_bytes": frames.total_bytes, "last_unreused": frames.last_unreused}, immutable=True)
+        "count": len(frames), "total_bytes": frames.total_bytes, "last_unreused": frames.last_unreused}
+    if batched:
+        header["batch_size"] = READER_INDEX_BATCH
+    # Publish the header only after every immutable descriptor file is durable.
+    evidence_write(safe_path(folder, "header.json"), header, immutable=True)
 
 
 def evidence_index_header(directory: Path, activation: dict, receipt_id: str) -> dict:
     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
         raise ResearchError("Invalid indexed reader receipt")
     header = evidence_read(safe_path(directory, f"index-{receipt_id}", "header.json"))
-    exact_keys(header, {"receipt_id", "generation", "scope_version", "count", "total_bytes", "last_unreused"}, "reader index")
+    fields = {"receipt_id", "generation", "scope_version", "count", "total_bytes", "last_unreused"}
+    if activation.get("reader_index") == "page-cache-v2":
+        fields.add("batch_size")
+    exact_keys(header, fields, "reader index")
+    if "batch_size" in header and (type(header["batch_size"]) is not int or header["batch_size"] != READER_INDEX_BATCH):
+        raise ResearchError("Invalid reader descriptor batch size")
     if (header["receipt_id"] != receipt_id or header["generation"] != activation["id"]
             or header["scope_version"] != activation["scope_version"]
             or any(type(header[key]) is not int for key in ("count", "total_bytes", "last_unreused"))
@@ -2102,21 +2126,37 @@ def evidence_index_header(directory: Path, activation: dict, receipt_id: str) ->
 def evidence_index_page(directory: Path, header: dict, index: int) -> dict:
     if type(index) is not int or not 0 <= index < header["count"]:
         raise ResearchError("Reader page is outside the saved index")
-    descriptor = evidence_read(safe_path(directory, f"index-{header['receipt_id']}", f"{index}.json"))
-    exact_keys(descriptor, {"page", "following"}, "reader page descriptor")
-    page, following = descriptor["page"], descriptor["following"]
-    exact_keys(page, {"index", "count", "offset", "total_bytes", "part"}, "indexed page")
-    part = page["part"]
-    exact_keys(part, {"unit", "offset", "bytes", "sha256"}, "indexed part")
-    if (page["index"] != index or page["count"] != header["count"] or page["total_bytes"] != header["total_bytes"]
-            or any(type(page[key]) is not int for key in ("index", "count", "offset", "total_bytes"))
-            or not 0 <= page["offset"] <= header["total_bytes"]
-            or type(part["offset"]) is not int or part["offset"] < 0
-            or type(part["bytes"]) is not int or not 0 <= part["bytes"] <= READER_TEXT_LIMIT
-            or not isinstance(part["unit"], str) or not re.fullmatch(r"[0-9a-f]{64}", str(part["sha256"]))
-            or (following is not None and (type(following) is not int or not index < following < header["count"]))):
-        raise ResearchError("Invalid indexed page descriptor")
-    return descriptor
+    if "batch_size" in header:
+        start = index // READER_INDEX_BATCH * READER_INDEX_BATCH
+        path = safe_path(directory, f"index-{header['receipt_id']}", f"batch-{index // READER_INDEX_BATCH}.json")
+        try:
+            if path.stat().st_size > READER_INDEX_LIMIT:
+                raise ResearchError("Reader descriptor batch exceeds its bounded size")
+        except OSError as exc:
+            raise ResearchError(f"Cannot read reader descriptor batch: {exc}") from exc
+        batch = evidence_read(path)
+        exact_keys(batch, {"pages"}, "reader descriptor batch")
+        pages = batch["pages"]
+        if not isinstance(pages, list) or len(pages) != min(READER_INDEX_BATCH, header["count"] - start):
+            raise ResearchError("Invalid reader descriptor batch coverage")
+    else:
+        start = index
+        pages = [evidence_read(safe_path(directory, f"index-{header['receipt_id']}", f"{index}.json"))]
+    for expected, descriptor in enumerate(pages, start):
+        exact_keys(descriptor, {"page", "following"}, "reader page descriptor")
+        page, following = descriptor["page"], descriptor["following"]
+        exact_keys(page, {"index", "count", "offset", "total_bytes", "part"}, "indexed page")
+        part = page["part"]
+        exact_keys(part, {"unit", "offset", "bytes", "sha256"}, "indexed part")
+        if (page["index"] != expected or page["count"] != header["count"] or page["total_bytes"] != header["total_bytes"]
+                or any(type(page[key]) is not int for key in ("index", "count", "offset", "total_bytes"))
+                or not 0 <= page["offset"] <= header["total_bytes"]
+                or type(part["offset"]) is not int or part["offset"] < 0
+                or type(part["bytes"]) is not int or not 0 <= part["bytes"] <= READER_TEXT_LIMIT
+                or not isinstance(part["unit"], str) or not re.fullmatch(r"[0-9a-f]{64}", str(part["sha256"]))
+                or (following is not None and (type(following) is not int or not expected < following < header["count"]))):
+            raise ResearchError("Invalid indexed page descriptor")
+    return pages[index - start]
 
 
 def evidence_index_frame(directory: Path, activation: dict, receipt_id: str, index: int,
@@ -2298,7 +2338,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
                               "reader_transport": args.transport, "latest_sources": None,
                               "reader_call_template": "functions-exec-v1"}
                 if args.transport == "stream-v2":
-                    activation["reader_index"] = "page-cache-v1"
+                    activation["reader_index"] = "page-cache-v2"
                 evidence_web_route(project, directory, activation)
                 if args.transport in STREAM_TRANSPORTS:
                     activation["scope_version"] = 1
@@ -2675,7 +2715,7 @@ def evidence_hook() -> dict:
                 failure_stage = "handler_identity"
                 raise ResearchError("Handler identity changed")
             frames = None
-            indexed = reader == "readback" and activation.get("reader_index") == "page-cache-v1"
+            indexed = reader == "readback" and activation.get("reader_index") in READER_INDEX_FORMATS
             if reader and reader_request[1] is not None:
                 failure_stage = "reader_saved_bundle"
                 if indexed:
