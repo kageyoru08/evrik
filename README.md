@@ -95,6 +95,17 @@ New activations use derived page descriptors and a resumable cursor to avoid
 rescanning the entire manifest and progress directory for each page. These
 caches grant no aggregate native credit; `check`/`close` still validate the
 complete saved content, original native proofs and current evidence.
+
+Initial descriptor creation still has a durability cost. A bounded Windows
+profile on 2026-10-24 used five fresh snapshots at each of 128 bytes, 8 KiB and
+64 KiB (3, 4 and 13 pages), with synthetic CLI/hooks and successful full
+check/close. Median creation times were 21.1, 25.9 and 71.7 ms; `fsync` accounted
+for roughly 74–76%, while path validation accounted for roughly 9–10%.
+These nested, instrumented in-process timings are host-specific, not native
+process/model latency. The profile did not establish a safe, worthwhile startup
+optimization, so atomic publication, flush/fsync, path checks and immutable
+collision handling remain unchanged.
+
 `evidence revise` versions
 the full required scope and reuses native proof only for identical units in the
 same activation. Hook diagnostics preserve recognition/matching stages and the
