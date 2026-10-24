@@ -1263,6 +1263,33 @@ def evidence_command_project(command: Any) -> str | None:
     return parts[8] if parts else None
 
 
+def evidence_reader_intent(activation: dict, tool_input: Any) -> bool:
+    """Diagnostic hint only; management commands are not failed reader attempts."""
+    if not isinstance(tool_input, dict):
+        return False
+    expected = evidence_command_argv(activation.get("readback_command"))
+    for key in ("command", "cmd"):
+        command = tool_input.get(key)
+        if not isinstance(command, str):
+            continue
+        try:
+            parts = shlex.split(command[2:] if command.startswith("& ") else command)
+        except ValueError:
+            continue
+        if not parts:
+            continue
+        executable = parts[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if not (re.fullmatch(r"(?:python(?:w|[0-9.]*)|py|pypy[0-9]*)(?:\.exe)?", executable)
+                or expected and os.path.normcase(parts[0]) == os.path.normcase(expected[0])):
+            continue
+        if any(parts[i] == "evidence" and parts[i + 1] in {"readback", "sources", "next"}
+               and parts[i - 1].lower().endswith(".py")
+               and not any(option.startswith(("-c", "-m")) for option in parts[1:i - 1])
+               for i in range(1, len(parts) - 1)):
+            return True
+    return False
+
+
 def evidence_reader_command(activation: dict, reader: str, receipt_id: str, index: int) -> str:
     return activation[reader + "_command"] + f" --receipt {receipt_id} --page {index}"
 
@@ -2680,14 +2707,14 @@ def evidence_hook() -> dict:
             evidence_diagnostic(directory, activation, event, "hook_cwd_mismatch", True)
             return {}
         if name not in {"Bash", "webrun"}:
-            if isinstance(tool_input, dict) and any("evidence" in str(tool_input.get(key, "")) for key in ("command", "cmd")):
+            if evidence_reader_intent(activation, tool_input):
                 evidence_diagnostic(directory, activation, event, "unsupported_reader_tool", True)
             return {}
         reader_request = evidence_reader_request(activation, tool_input) if name == "Bash" else None
         reader = reader_request[0] if reader_request else None
         active = reader or (name == "webrun" and activation["public_web"])
         if not active:
-            if isinstance(tool_input, dict) and "evidence" in str(tool_input.get("command", "")):
+            if evidence_reader_intent(activation, tool_input):
                 evidence_diagnostic(directory, activation, event, "request_unrecognized", True)
             return {}
         evidence_diagnostic(directory, activation, event, "request_recognized")

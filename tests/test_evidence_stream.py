@@ -128,6 +128,40 @@ class StreamEvidenceTests(unittest.TestCase):
         blob.write_bytes(b"changed")
         self.assertFalse(self.action("check")["ready_to_close"])
 
+    def test_management_calls_do_not_hide_the_first_reader_failure(self):
+        self.root = self.project  # Root native sessions route management calls here too.
+        activation = self.action("activate")
+        command = activation["resume_command"]
+        for operation in ("activate", "check", "close", "revise"):
+            management = command.replace("'next'", "'" + operation + "'").replace(" evidence next ", " evidence " + operation + " ")
+            self.assertNotEqual(management, command)
+            self.calls += 1
+            self.assertEqual(self.hook("PostToolUse", management, "ordinary status"), {})
+        for ordinary in ("Get-Content evidence.md", "Get-Content 'evidence next notes.md'",
+                         "Write-Output 'evidence next'", "Write-Output python research.py evidence next",
+                         "python -c 'pass' research.py evidence next", "python -m module research.py evidence next"):
+            self.calls += 1
+            self.assertEqual(self.hook("PreToolUse", ordinary), {})
+        self.assertEqual(self.hook("PreToolUse", {"cmd": "Get-Content evidence.md"}, name="unsupported_tool"), {})
+        before = self.action("check")["diagnostics"]
+        self.assertIsNone(before.get("first_failure"))
+        self.calls += 1
+        self.hook("PreToolUse", command)
+        frame = self.action("next")
+        blocked = self.hook("PostToolUse", command, r.evidence_output(frame).decode()[:40])
+        self.assertEqual(blocked["decision"], "block")
+        self.assertEqual(self.action("check")["diagnostics"]["first_failure"]["stage"], "reader_response_json")
+        for invalid in (command + " --wrong", command.replace("research.py", "other.py"), command + "; echo changed"):
+            self.calls += 1
+            self.hook("PreToolUse", invalid)
+        self.calls += 1
+        self.hook("PreToolUse", {"cmd": command}, name="unsupported_tool")
+        final = self.action("check")
+        self.assertEqual(final["diagnostics"]["stages"]["request_unrecognized"], 3)
+        self.assertEqual(final["diagnostics"]["stages"]["unsupported_reader_tool"], 1)
+        self.assertEqual(final["diagnostics"]["first_failure"]["stage"], "reader_response_json")
+        self.assertEqual(final["reader_progress"]["matched_pages"], 0)
+
     def test_missing_page_prevents_close_and_unchanged_next_resumes_same_receipt(self):
         activation = self.action("activate")
         command = activation["resume_command"]

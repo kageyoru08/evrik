@@ -267,6 +267,11 @@ are absent. Diagnostic counts are operational telemetry, not evidence credit.
 Generated reader commands route to their explicitly activated project even
 when the native hook runs at a parent workspace. Unsupported shell forms remain
 unmatched and are diagnosed when the activation can be located.
+Reader-intent diagnostics look for separate `evidence readback`, `evidence sources`
+or `evidence next` arguments after a Python script in a literal Python invocation.
+Management operations and quoted filename/prose references remain neutral. This
+limited lexical hint does not resolve shell variables, wrappers or expressions,
+and grants no native credit; historical failures stay intact.
 
 Supported public text blocks may retain their `annotations` and `_meta`
 wrappers. When an otherwise unsupported response can be safely serialized
