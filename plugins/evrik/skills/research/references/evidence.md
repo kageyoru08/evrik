@@ -2,6 +2,36 @@
 
 Make the chain from question to conclusion recoverable without relying on conversation history. Use the project's existing record format; introduce only the files needed for the investigation.
 
+## Scope a review without duplicating history
+
+Maintain one current checkpoint and a compact evidence manifest, which may be
+a table inside it. For each reused material claim, retain the original path,
+SHA-256, reviewed claim/scope, review identity, source/input/protocol/comparator
+bindings, limitations and unresolved obligations. Keep full original artifacts
+and receipts at their existing locations. Do not copy an ancestor's full text
+or manifest into every descendant. A shorter checkpoint must not erase a
+failure, budget breach, dissent, missing proof or sealed-test restriction.
+
+Check referenced bytes and the bindings that make prior review applicable.
+Semantic review covers new or changed claims and their dependency impacts;
+follow original evidence for any unreviewed, changed, stale or disputed claim.
+If the old review did not cover the new use, review that use before relying on
+it. Hash verification only establishes identity. It cannot create native proof,
+prove source access, discharge a scientific obligation, or grant new attempts.
+
+Declare the actual current deliverables and necessary new evidence for native
+review. An immutable historical source already reviewed for the same use can
+remain a checked reference; this is not native delivery in a new activation.
+Every declared artifact and the complete attached runner companion still use
+the full readback below. Do not omit a required artifact or choose a fallback
+merely to reduce page count. Existing activations keep their requirements;
+scope changes use explicit `revise` and retain their original records.
+
+Administrative edits and retrospective workflow maintenance alone require
+ordinary saved-content review and appropriate local checks, not a new research
+activation or experiment. Preserve any existing pending research obligations.
+When research is paused, such maintenance does not resume it.
+
 ## Activate and close a native evidence session
 
 Resolve `scripts/research.py` from this installed skill. Its `evidence` commands
@@ -34,17 +64,22 @@ for final review, including the shared decision, participant responses and
 any additional API or refusal ledger. Declare those paths with repeated
 `--artifact` options even if the files will be written later. `--experiment`
 attaches runner state; it does not discover arbitrary collaboration files.
-New activations use `stream-v1`. If scope changes, use
+New activations use `stream-v2`. If scope changes, use
 `evidence revise --project ROOT --artifact REPORT --artifact CHECKPOINT --artifact NEW --reason TEXT`
 with the **complete** intended scope, including retained files. The previous
 scope record and all receipts remain immutable. The new scope needs a fresh
 manifest read; unchanged artifact units can reuse validated native page proofs
 from this same activation. Changed units need new reads. Removing a file is
 explicitly recorded and does not prove that its obligation was resolved.
-Legacy `pages-v1` generations retain their original bytes and limits; close
+Legacy `pages-v1` and `stream-v1` generations retain their original rules; close
 them honestly before a new streaming activation. Handler changes require a
 new activation and do not inherit native credit from the previous handler.
+Prefer correcting or revising the existing active scope over creating another
+generation for bookkeeping. This does not reopen an already closed activation.
 
+Identify the loaded revision by its handler SHA-256 and payload hashes, not
+version 1.0.0 alone. Start a fresh native task after a payload refresh and verify
+skill/hook discovery; an existing chat can retain old instructions.
 Activation records intent and exact deliverable paths. Native hooks must also
 be discovered, enabled and trusted through Codex's `/hooks` interface. They
 do not change host permissions or trust themselves. A registered hook can
@@ -87,18 +122,27 @@ are outside this prerequisite.
 
 Activation's `resume_command`, `readback_command` and `sources_command` are shell
 commands for the existing native execution tool, not separately named reader
-tools. Run the returned string literally, preserving its executable, script
-path, flags, quoting and project. A hand-written equivalent can emit output
-without producing a native match.
+tools. Prefer the returned string, preserving its executable, script, flags
+and project. `stream-v2` also accepts safe literal quoting and OS-equivalent
+path separators/case for those same absolute paths. Shell expressions,
+compound commands and aliases remain unsupported. Older transports require
+their original literal spelling. Successful emission alone is not a match.
 For final artifacts, prefer the same generated `resume_command` (`evidence next`)
 on each call: it selects the first unmatched part, resumes the same immutable
-receipt after interruption, or creates a new manifest when current bytes change.
+receipt after interruption. While pages remain, it reads that pinned snapshot;
+after completion it checks current bytes before reusing or replacing the manifest.
+Use explicit `readback` to refresh a changed, unfinished snapshot.
 `check` supplies `resume_functions_exec_source`, progress, size including companion
 metadata, and unmet conditions. It never silently closes, retries a retrieval,
 dispatches a reviewer, or treats emission as native matching.
 
 The streaming reader returns bounded JSON frames of saved UTF-8 artifact bytes,
-the scope manifest and complete companion metadata. `page.part` identifies the
+the scope manifest and complete companion metadata. In `stream-v2`, repeated
+large companion values are stored once with explicit field-path references;
+all units must reconstruct the exact original companion bytes and hash. This
+does not summarize or remove failures, obligations or run state. Identical units
+can reuse validated proof only within the same activation and handler.
+`page.part` identifies the
 unit, byte offset and chunk hash. There is no aggregate 256 KiB limit. It hashes
 and copies file chunks without loading the full artifact corpus into memory;
 manifests and runner metadata still use memory proportional to their size.
@@ -126,6 +170,12 @@ Status provides the same template beside each pending command, including
 `next_readback_functions_exec_source`. Inspect each returned page before using
 the next template; do not batch or loop over templates. These call templates
 are a convenience, not proof of delivery or review, and do not run check or close.
+Stop following page commands when `next_command` is null, then run `check`
+and `close`; do not add a complete `check` between every page. Reserve at least
+the reported `remaining_pages` plus final check/close within the existing
+budget, and account separately for source reads, corrections and failures.
+An insufficient reserve is a visible incomplete result, not permission to
+refill attempts or discard required evidence.
 The helper reads every declared UTF-8 file and saves immutable hash-addressed
 parts under `.research/evidence/`. Missing, unsafe, non-text artifacts or
 metadata that cannot fit a frame remain incomplete; no heading filter or silent
@@ -133,6 +183,15 @@ truncation substitutes for the declared contents. Read every segment in its unit
 context and assess that bundle against
 the question and retained sources. The generated obligation/run view is a
 closure companion; carry its material state into the actual checkpoint.
+
+For `stream-v2`, each page and its hook validate the immutable snapshot and
+exact page response without rescanning current deliverables or run archives.
+The frame explicitly reports current evidence as not checked. `check` and
+ordinary `close` perform full current source/dependency/scope/handler and native
+proof validation outside the hook's five-second window. A snapshot MATCH does
+not attest freshness at each page or transient changes between those boundaries.
+Page selection still scans receipt/progress metadata; this is not a claim of
+linear total pagination work. Markers are hints, never sufficient native proof.
 
 `check` compares current deliverables and attached evidence with that
 readback. Relevant changes require another readback; never mix pages from
@@ -156,6 +215,9 @@ rewriting the original close. Readers and capture stay inactive. Further
 native review requires a deliberate new activation; do not rewrite the
 reviewed checkpoint merely to add the later close result. Report that
 execution tail separately.
+Use the existing close receipt or one short tail record as the terminal
+administrative record. Do not recursively read back closures of closures.
+This rule never suppresses a material correction or an unmet review obligation.
 
 While active, `check` and a refused ordinary close name the unmet conditions and return the
 literal reader commands and pending-page progress. If the latest readback
@@ -163,7 +225,8 @@ has no native match, use `next_readback_command`; for pending sources use
 the source status's `next_command`. Run it alone, expose the complete output
 and inspect the saved contents;
 then check or close in a separate call. A continuation reads the same
-immutable receipt and refuses changed current evidence. Truncated or
+immutable receipt. Legacy transports refuse changed current evidence at each
+page; `stream-v2` detects stale current evidence at check/close. Truncated or
 unmatched pages remain incomplete; no automatic retry, manual hook invocation
 or hash-only substitute is supported. A missing match does not establish
 that the native route is unavailable. `semantic_review_verified: false` is
@@ -176,14 +239,21 @@ the raw hook envelope or private session fields. No observed event means only
 that no event was recorded for this activation; it does not prove that hooks
 are absent. Diagnostic counts are operational telemetry, not evidence credit.
 Generated reader commands route to their explicitly activated project even
-when the native hook runs at a parent workspace. Other shell spellings remain
+when the native hook runs at a parent workspace. Unsupported shell forms remain
 unmatched and are diagnosed when the activation can be located.
+
+Supported public text blocks may retain their `annotations` and `_meta`
+wrappers. When an otherwise unsupported response can be safely serialized
+within the capture cap, diagnostics retain its body path and hash for manual
+recovery. The original operation stays incomplete and receives no native source
+credit. Private-shaped, oversized or absent bodies are not saved; do not repeat
+a retrieval merely to replace a failed receipt or imply recovery is guaranteed.
 
 ## Supported capture boundaries
 
 | Route | Capture and verification | Boundary |
 | --- | --- | --- |
-| Root native generated reader | Pre/Post request, response bytes, all part hashes, current scope | Does not attest comprehension or outer display |
+| Root native generated reader | Pre/Post request, response bytes and part hashes; full current scope at check/close | Does not attest comprehension, outer display or continuous freshness |
 | Root native `webrun` search/open/find | Bounded request/returned text, source reader and record references | Explicit hook-workspace route for stream sessions; supported text only, 256 KiB capture and source bundle limits |
 | Exa or another source tool | `record source` imports an already saved ordinary response and explicit identity metadata | Not automatic native capture; do not retrieve again just to fill a receipt |
 | Worker ordinary output | `record save`, or `record review` bound to a frozen packet | Caller-reported identity; no private sessions, implied routing, or model attestation |

@@ -85,11 +85,18 @@ requires fresh evidence before disabling capture. Use the exact reader
 invocation returned by activation. These commands need an existing directory,
 not a Git repository or a fake protocol for literature.
 
-New evidence sessions stream immutable artifact parts and complete companion
-metadata without the former aggregate 256 KiB limit. `evidence revise` versions
+New `stream-v2` evidence sessions stream immutable artifact parts and losslessly
+factored companion metadata without the former aggregate 256 KiB limit. Pages
+validate their saved snapshot; full current-evidence and native-proof validation
+runs at `check`/`close`, outside the hook timeout. Snapshot MATCH does not itself
+mean current freshness. Safe literal path/quote variants are recognized, while
+shell expressions and compound reader commands remain unsupported.
+`evidence revise` versions
 the full required scope and reuses native proof only for identical units in the
 same activation. Hook diagnostics preserve recognition/matching stages and the
-first failure. Generated reader calls explicitly route to their activated root,
+first failure. Unsupported bounded public response bodies can be preserved for
+manual recovery without granting native source credit. Generated reader calls
+explicitly route to their activated root,
 including a nested project. Existing generations retain their original proof.
 
 Optional `record` commands preserve byte versions, imported source responses,
@@ -97,7 +104,9 @@ frozen review packets, invitation failures and vote withdrawals. They do not
 dispatch agents or fabricate native capture. `status` separates execution,
 artifact integrity, scientific assessability, reviewer decisions and native
 verification; `--since` shows only changes. `preflight` reports compatibility
-before setup and can run explicitly authorized project checks. See the
+before setup and can run explicitly authorized project checks. Its result names
+that limited readiness scope; syntax checks alone do not establish the actual
+assembled launch contract or scientific qualification. See the
 [evidence commands and support matrix](plugins/evrik/skills/research/references/evidence.md)
 and [project preflight](plugins/evrik/skills/research/references/experiments.md).
 
@@ -109,6 +118,17 @@ not retain bodies. Registered hooks may still receive matching-event input
 before filtering. There is no automatic Stop enforcement. The skill retains
 manual capture/readback fallbacks and an explicit incomplete close when a
 required native check is unavailable.
+
+For ongoing work, keep one active checkpoint and a compact manifest of original
+evidence paths, hashes, reviewed claims and limitations. Review changed claims
+and their dependency impacts; inspect original evidence when a new use, changed
+binding or unresolved issue requires it. Do not copy whole ancestor checkpoints
+into each new report or reopen evidence solely to include its own close result.
+Administrative maintenance uses ordinary saved-content review and local checks;
+it does not activate research or resume a paused program. These workflow rules
+leave complete declared native readback, companion metadata, experiment gates,
+budget accounting and historical receipts unchanged. Hashes alone do not grant
+native or scientific credit.
 
 ## Try the local example
 

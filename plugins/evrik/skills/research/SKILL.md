@@ -1,6 +1,6 @@
 ---
 name: research
-description: Conduct question-driven research with traceable sources, explicit experimental protocols, and evidence-backed decisions. Use for literature synthesis, reproducible local experiments, or continuing a research investigation; skip ordinary single-fact lookups.
+description: Conduct question-driven research with traceable sources, explicit experimental protocols, and evidence-backed decisions. Use for literature synthesis, reproducible local experiments, or continuing a research investigation; skip ordinary single-fact lookups and administration-only maintenance.
 ---
 
 # Research
@@ -12,6 +12,11 @@ inspected. Use the project's existing methods and records when they fit.
 
 Establish the question, deliverable, existing evidence, authorized work area,
 constraints, and stopping criteria.
+
+Honor a research pause. Documentation, bookkeeping, or workflow maintenance
+alone does not activate a research session, launch an experiment, or resume a
+paused program. Verify such edits with saved-content review and relevant local
+checks; do not create an experimental protocol to validate administration.
 
 Use the literature path for discovery or synthesis, the experiment path for
 local experiments or their resumption, and both when the question requires
@@ -26,10 +31,22 @@ questions may still be delegated. Never call a decision jointly adopted
 without every rostered participant's explicit review and acceptance of the
 current saved body under the agreed rule.
 
-Use the existing research note or checkpoint as the working record. Create
-only a necessary record within the authorized area, preserve historical
-entries, and carry its current state forward instead of reconstructing it
-from conversation at the end.
+Use one active checkpoint, one evidence manifest (a table in that checkpoint
+is sufficient), and the decision/review needed for the current question.
+The checkpoint holds current status, owner, next decision, unresolved gates,
+budget/attempt accounting and evidence pointers. Keep raw records immutable;
+before replacing historical text in a living checkpoint, preserve an exact
+version. Reference earlier evidence by path, hash, relevant claim, review
+identity and limitations instead of copying entire prior checkpoints or
+embedding their manifests recursively. Existing runner receipts remain primary.
+
+Before reusing a reviewed claim, verify its source/input/protocol/comparator
+bindings and current dependencies. Review the changed claims and their effects
+on dependent conclusions. Inspect new, changed, stale, contradictory or
+previously unreviewed evidence in full as needed; a matching hash establishes
+byte identity, not semantic review, native delivery or scientific validity.
+Do not discard failures, breaches, dissent or unresolved obligations to shorten
+the record. See [references/evidence.md](references/evidence.md) for review scope.
 
 Read [references/evidence.md](references/evidence.md) for native capture, readback
 and closure. Reuse already-read guidance while its content and applicability
@@ -63,6 +80,11 @@ with the runner's `reconcile --note` before experimental edits or launches.
 Read the returned source-bound units and run state; give each unit an
 explicit disposition and rationale. Preserve historical wording and carry
 unresolved obligations into the current working record.
+
+Select the current checkpoint and only the inherited notes needed to resolve
+its claims and obligations. Follow references when those claims depend on
+them; do not register every ancestor merely because it is historical. Selection
+must retain every material prerequisite, including unresolved older failures.
 
 `init` reports the entry decision still required; it does not declare that
 history is absent. If no inherited material applies, explicitly record the
@@ -108,6 +130,11 @@ and results; it does not select hypotheses or prove scientific validity.
 Use `preflight --project ROOT` early to expose compatibility and budget limits.
 Project-defined checks are optional and execute only with `--run-checks` after
 their actual effects are authorized; see the experiments reference.
+Before spending a scarce attempt, verify the assembled invocation and runtime
+contract, including interpreter, required arguments, paths, inputs, manifests
+and archive budgets. Use safe existing project checks when available. Syntax
+or source review alone is not execution readiness; runner preflight states its
+own limited scope and cannot infer an omitted project-specific requirement.
 
 Use trusted foreground execution within existing permissions. Preserve
 evaluated snapshots and original results. Changes to code, protocols, data,
@@ -208,21 +235,14 @@ After saving, read the relevant contents of the actual saved deliverables
 and compare them with the retained evidence.
 
 For an activated session, follow the literal, separate-page readback procedure
-and freshness checks in [references/evidence.md](references/evidence.md). Request
-at least 16,384 output tokens when supported on every initial,
-continuation and correction reader call and its outer wrapper; a large
-request is still no guarantee of complete native delivery. Review
-the actual saved contents and attached obligation/run state in context; matched
-delivery does not establish understanding. Use `evidence check` for pending work.
-New sessions stream artifact units and complete companion metadata through
-bounded frames. Prefer generated `evidence next` to resume the first unmatched
-part. Use `evidence revise` with the complete required scope when it changes;
-identical units may reuse validated native proofs within the same activation.
-Review the new manifest and changed units. Handler changes require a new
-activation. Use `status` for separate execution, integrity, reviewer, scientific
-and native states, with `--since` for changes only. Immutable working-document
-versions, frozen review packets, and explicit source imports are optional tools
-described in the evidence reference; they do not grant scientific acceptance.
+and freshness checks in [references/evidence.md](references/evidence.md).
+Review complete declared contents and attached obligation/run state in context;
+matched delivery does not establish understanding. Use generated `evidence next`
+to resume pending parts and `evidence revise` for a changed complete scope.
+Only identical units within the same activation may reuse validated native
+proof; review the new manifest and changed units with dependency impacts.
+Handler changes require a new activation. `status --since` gives changes while
+keeping execution, integrity, reviewer, scientific and native states separate.
 
 For literature, cover all source/access statements and citation locators.
 For experiments, read the current checkpoint, including inherited-action
@@ -237,6 +257,11 @@ Correct discrepancies and read back the affected saved content after changes.
 For a historical record, append the correction and its evidence while retaining
 the earlier factual entry. Preserve original evidence. Reconcile requested work
 against performed actions, not merely the existence of output files.
+
+Keep the later close result in its existing receipt or one separate execution
+tail. Do not rewrite reviewed deliverables just to include their own closure,
+then activate another review to close that rewrite. Material corrections still
+require the applicable fresh review; bookkeeping cannot waive a pending check.
 
 Use `evidence check` and then `evidence close` for an activated session after
 the final correction/readback. Changed deliverables or attached evidence make
@@ -293,6 +318,14 @@ uncertainty. Reuse verified evidence while its inputs remain valid; broaden or
 repeat work only for changed inputs, a failure, or an unresolved question.
 Keep full records in files and return relevant evidence without repeatedly
 loading or copying raw outputs into context.
+
+For a substantive change, prefer one owner and one independent reviewer when
+review is required; add research or another specialist only for a named
+uncertainty. A peer meeting remains a separate, explicitly defined workflow.
+If consecutive administrative tasks do not resolve a decision or advance a
+research gate, reassess the next action before adding another protocol or
+closure artifact. Report only measured overhead; a target is not a waiver of
+required evidence or permission to exceed a frozen run budget.
 
 Delegate bounded independent questions when useful, specifying evidence,
 output, and file ownership. Keep task boundaries and routing independent of

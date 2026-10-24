@@ -226,7 +226,8 @@ def hook_inventory(response, project, installed, expect_hooks, plugin_id=PLUGIN_
                     "Loaded hook behavior differs from the package")
             require(hook["trustStatus"] == "untrusted" and hook["isManaged"] is False,
                     "Discovery check must not grant hook trust")
-            require(re.fullmatch(r"sha256:[0-9a-f]{64}", hook["currentHash"]) is not None, "Missing hook definition identity")
+            require(re.fullmatch(r"sha256:[0-9a-f]{64}(?:/sha256:[0-9a-f]{64})?", hook["currentHash"]) is not None,
+                    "Missing hook definition/content identity")
     other = [hook for hook in entry["hooks"] if hook.get("pluginId") != plugin_id]
     canary = [hook for hook in other if hook.get("pluginId") == "distribution-canary@distribution-canary"]
     require(len(canary) == 1 and canary[0]["enabled"] is True and canary[0]["trustStatus"] == "untrusted",

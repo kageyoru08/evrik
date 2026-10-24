@@ -16,6 +16,8 @@ spec.loader.exec_module(r)
 
 
 class StreamEvidenceTests(unittest.TestCase):
+    transport = "stream-v1"
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="evrik stream ")
         self.addCleanup(temporary.cleanup)
@@ -32,7 +34,7 @@ class StreamEvidenceTests(unittest.TestCase):
 
     def action(self, operation, **changes):
         values = dict(operation=operation, project=str(self.project), artifact=["report.md"], public_web=False,
-                      experiment=False, record=None, transport="stream-v1", receipt=None, page=None,
+                      experiment=False, record=None, transport=self.transport, receipt=None, page=None,
                       incomplete=False, reason=None, hook_root=str(self.root))
         values.update(changes)
         return r.evidence_action(argparse.Namespace(**values))
@@ -98,7 +100,8 @@ class StreamEvidenceTests(unittest.TestCase):
         with mock.patch.object(r, "evidence_dependencies", return_value=dependencies):
             frames = self.finish(self.action("activate")["resume_command"])
             observed = b"".join(f["page"]["text"].encode() for f in frames if f["page"]["part"]["unit"] == "dependencies")
-            self.assertEqual(json.loads(observed), dependencies)
+            restored = r.evidence_companion_restore({"dependencies": observed}) if self.transport == "stream-v2" else json.loads(observed)
+            self.assertEqual(restored, dependencies)
             self.assertGreater(self.action("check")["size"]["companion_bytes"], r.EVIDENCE_LIMIT)
 
     def test_rejections_are_diagnostic_and_never_grant_native_credit(self):
@@ -153,6 +156,142 @@ class StreamEvidenceTests(unittest.TestCase):
         bundle = json.loads(frame["page"]["text"])
         (self.project / "report.md").write_bytes(b"Source notes\n" * 25000 + bundle["record_reference"].encode() + b"\n")
         self.assertTrue(self.action("check")["sources"]["ready"])
+
+
+class SnapshotEvidenceTests(StreamEvidenceTests):
+    transport = "stream-v2"
+
+    def test_complete_status_has_no_actionable_reader_and_closed_staleness_is_preserved(self):
+        activation = self.action("activate")
+        self.finish(activation["resume_command"])
+        closed = self.action("close")
+        self.assertTrue(closed["ready_to_close"])
+        self.assertIsNone(closed["reader_progress"]["next_command"])
+        for key in ("next_readback_command", "resume_command", "readback_command", "sources_command"):
+            self.assertIsNone(closed[key])
+        original = (self.directory / "session.json").read_bytes()
+        (self.project / "report.md").write_text("Later correction", encoding="utf-8")
+        self.assertFalse(self.action("check")["current_evidence"]["fresh"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+        self.assertEqual((self.directory / "session.json").read_bytes(), original)
+
+    def test_safe_command_spelling_binds_native_proof_but_compound_commands_do_not(self):
+        activation = self.action("activate")
+        command = activation["resume_command"]
+        equivalent = command.replace("\\", "/") if os.name == "nt" else command
+        first = self.page(equivalent)
+        self.assertEqual(first["current_evidence"], "not_checked; immutable snapshot page only")
+        self.assertEqual(self.action("check")["reader_progress"]["matched_pages"], 1)
+        if os.name == "nt":
+            arguments = r.evidence_command_argv(command)
+            quoted = "& " + " ".join('"' + part + '"' for part in arguments)
+            self.page(quoted)
+        for invalid in (command + "; echo changed", command + "\n", command + " | cat",
+                        command.replace("research.py", "other.py"), command.replace("--project", "--wrong"),
+                        command + " $(echo injected)", command + " --page 0"):
+            self.assertIsNone(r.evidence_reader_request(activation, {"command": invalid}))
+        self.finish(command)
+        self.assertTrue(self.action("close")["ready_to_close"])
+
+    def test_pagination_bounds_inventory_and_frame_reads_and_close_rechecks_freshness(self):
+        (self.project / "report.md").write_bytes(b"x" * (r.READER_TEXT_LIMIT * 20))
+        activation = self.action("activate")
+        command = activation["resume_command"]
+        with mock.patch.object(r, "evidence_inventory", wraps=r.evidence_inventory) as inventories, \
+                mock.patch.object(r.EvidenceFrames, "__getitem__", autospec=True,
+                                  side_effect=r.EvidenceFrames.__getitem__) as reads:
+            frames = []
+            while True:
+                frames.append(self.page(command))
+                if frames[-1]["next_command"] is None:
+                    break
+            self.assertEqual(inventories.call_count, 1)
+            self.assertLessEqual(reads.call_count, 3 * len(frames))
+        self.assertFalse((self.directory / f"matched-{frames[-1]['receipt_id']}.json").exists())
+        self.assertTrue(self.action("check")["ready_to_close"])
+        self.action("close")
+        activation = self.action("activate")
+        command = activation["resume_command"]
+        first = self.page(command)
+        (self.project / "report.md").write_bytes(b"y" * (r.READER_TEXT_LIMIT * 20))
+        while True:
+            self.calls += 1
+            self.assertEqual(self.hook("PreToolUse", command), {})
+            frame = self.action("next")
+            response = self.hook("PostToolUse", command, r.evidence_output(frame).decode())
+            self.assertEqual(response, {})
+            if frame["next_command"] is None:
+                break
+            self.assertEqual(frame["receipt_id"], first["receipt_id"])
+        status = self.action("check")
+        self.assertFalse(status["fresh"])
+        self.assertFalse(status["ready_to_close"])
+        self.assertTrue(status["native_response_matched"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+        closed = self.action("close", incomplete=True, reason="Current source changed after snapshot delivery")
+        self.assertTrue(closed["incomplete"])
+        for fields in (closed, closed.get("reader_progress", {}), closed.get("sources", {})):
+            for key, value in fields.items():
+                if key.endswith(("_command", "_functions_exec_source")):
+                    self.assertIsNone(value)
+
+    def test_companion_factoring_preserves_edges_failures_and_rejects_invalid_references(self):
+        shared = {"source": "preserved source\n" * 300, "failed_attempt": {"exit": 1, "status": "unresolved"}}
+        dependencies = {"ready": False, "reconciliation": shared, "runs": [
+            {"id": "first", "reconciliation": shared, "status": "failed", "empty": []},
+            {"id": "second", "reconciliation": shared, "status": "prepared", "empty": None}]}
+        units = r.evidence_companion_units(dependencies)
+        self.assertEqual(r.canonical(r.evidence_companion_restore(units)), r.canonical(dependencies))
+        self.assertLess(sum(map(len, units.values())), len(r.canonical(dependencies)) // 2)
+        dangling = dict(units)
+        del dangling[next(name for name in units if name != "dependencies")]
+        with self.assertRaises(r.ResearchError):
+            r.evidence_companion_restore(dangling)
+        invalid = dict(units)
+        root = json.loads(invalid["dependencies"])
+        root["references"].append(root["references"][0])
+        invalid["dependencies"] = r.canonical(root)
+        with self.assertRaises(r.ResearchError):
+            r.evidence_companion_restore(invalid)
+
+    def test_progress_markers_are_hints_not_native_credit(self):
+        activation = self.action("activate")
+        frame = self.page(activation["resume_command"])
+        marker = self.directory / f"page-matched-readback-{frame['receipt_id']}-1.json"
+        r.evidence_write(marker, {"status": "invented"})
+        self.assertFalse(self.action("check")["ready_to_close"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+
+    def test_text_metadata_and_unsupported_public_response_remain_recoverable(self):
+        activation = self.action("activate", public_web=True, record="report.md")
+        request = {"open": [{"ref_id": "https://example.org/source"}]}
+        response = [{"type": "text", "text": "Public text", "annotations": {"audience": ["user"]}}]
+        self.calls += 1
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
+        self.assertEqual(self.hook("PostToolUse", request, response, name="webrun"), {})
+        self.calls += 1
+        self.hook("PreToolUse", activation["sources_command"])
+        frame = self.action("sources")
+        self.assertEqual(self.hook("PostToolUse", activation["sources_command"], r.evidence_output(frame).decode()), {})
+        bundle = json.loads(frame["page"]["text"])
+        self.assertEqual(bundle["capture"]["returned_text"]["content"], response)
+        (self.project / "report.md").write_text(bundle["record_reference"], encoding="utf-8")
+        ordinary = [{"type": "new_public_format", "body": "Preserve this ordinary returned output"}]
+        self.calls += 1
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
+        blocked = self.hook("PostToolUse", request, ordinary, name="webrun")
+        self.assertEqual(blocked["decision"], "block")
+        status = self.action("check")
+        recovery = status["web"]["recoverable_failures"][0]
+        self.assertEqual((self.project / recovery["path"]).read_bytes(), r.canonical(ordinary))
+        self.assertFalse(recovery["native_capture"])
+        self.assertFalse(status["web"]["complete"])
+        self.assertFalse(status["ready_to_close"])
+        self.assertIsInstance(status["diagnostics"]["first_failure"]["response_bytes"], int)
+        self.assertIsNone(r.evidence_text([{"type": "text", "text": "secret", "_meta": {"authorization": "secret"}}], enriched=True))
 
 
 if __name__ == "__main__":

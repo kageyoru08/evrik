@@ -4,6 +4,28 @@ This record preserves the qualified research behavior and its limits across the 
 
 The synchronous standard-library runner supports trusted foreground local Git experiments on Windows and Ubuntu with Python 3.11 and 3.14. The package supplies research guidance, exact source snapshots, conservative launch accounting, reconciliation and supported native source/evidence reading. It is not a security sandbox or durable process supervisor. Scientific acceptance remains separate from execution and evidence validity.
 
+## October 24 reader maintenance
+
+The October 24 maintenance adds the versioned `stream-v2` reader. Legacy
+transports keep their original proof rules; their observations do not
+automatically qualify a changed handler. The local Windows Python 3.14 suite
+completed 100 tests without failures (one platform skip). A separate fresh
+native root task on CLI 0.164.0-alpha.11.1, requesting GPT-6.1 Sol at medium
+effort, read four pages exactly once through the installed trusted hooks,
+including a safe path-separator variant, and closed with 4/4 MATCH, fresh
+evidence and null terminal commands. This was one directed maintenance fixture,
+not an autonomous research cohort or a scientific/cost comparison.
+
+Two synthetic fixtures with 10 and 18 pages measured pagination inventories
+at 20/36 before versus 1/1 after, archive digest passes at 40/72 versus 2/2,
+and frame fetches at 130/378 versus 30/54. Full check and close still perform
+freshness/proof validation. These count logical work, not physical disk I/O,
+model tokens or savings on a research project. Receipt/progress metadata can
+still incur quadratic pagination work. A read-only repack of a saved companion
+reconstructed its complete original bytes; it grants no new native credit.
+The external maintenance record binds exact payload hashes, first failures,
+native receipts, local measurements and public distribution verification.
+
 ## Accepted pre-rename verification
 
 CI run [35818855390](https://github.com/kageyoru08/evrik/actions/runs/35818855390), attempt 1, reports all six jobs successful for the frozen payload commit: four runner OS/Python combinations and native distribution lifecycle checks on Windows and Ubuntu. Independent review accepted all 134 downloaded evidence files, including 104 passed fault/collision reports and 79 tests in each runner combination; one Windows skip and two Ubuntu skips are platform-specific. Development-branch public-origin steps are skipped and do not count as public release verification.

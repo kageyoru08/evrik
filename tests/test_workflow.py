@@ -104,8 +104,12 @@ class WorkflowTests(unittest.TestCase):
         path.write_text(json.dumps(config), encoding="utf-8")
         not_run = r.preflight(self.project, self.storage)
         self.assertFalse(not_run["ready"])
+        self.assertEqual(not_run["readiness_scope"], "runner_prerequisites_and_declared_project_checks")
+        self.assertEqual(not_run["project_checks"], "not_run")
         ready = r.preflight(self.project, self.storage, True)
         self.assertTrue(ready["ready"], ready)
+        self.assertEqual(ready["project_checks"], "passed")
+        self.assertEqual(ready["scientific_acceptance"], "not_automatically_assessed")
         receipt = r.check_preflight(self.project, self.storage)
         completed = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "reconcile", "--project", str(self.project),
                                     "--no-inherited-notes", "--rationale", "New synthetic fixture"], capture_output=True, timeout=10)
