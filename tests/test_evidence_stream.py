@@ -1,5 +1,6 @@
 """Synthetic hook contracts; actual native delivery is a separate acceptance check."""
 import argparse
+import genericpath
 import importlib.util
 import io
 import json
@@ -39,11 +40,11 @@ class StreamEvidenceTests(unittest.TestCase):
         values.update(changes)
         return r.evidence_action(argparse.Namespace(**values))
 
-    def hook(self, phase, command, response=None, name="Bash"):
+    def hook(self, phase, command, response=None, name="Bash", **extra):
         cwd = self.root
         event = {"hook_event_name": phase, "tool_name": name, "tool_use_id": str(self.calls),
                  "session_id": self.session, "cwd": str(cwd),
-                 "tool_input": {"command": command} if name == "Bash" else command}
+                 "tool_input": {"command": command} if name == "Bash" else command, **extra}
         if phase == "PostToolUse":
             event["tool_response"] = response
         with io.TextIOWrapper(io.BytesIO(json.dumps(event).encode()), encoding="utf-8") as stdin, \
@@ -191,9 +192,136 @@ class StreamEvidenceTests(unittest.TestCase):
         (self.project / "report.md").write_bytes(b"Source notes\n" * 25000 + bundle["record_reference"].encode() + b"\n")
         self.assertTrue(self.action("check")["sources"]["ready"])
 
+    def test_interrupted_scope_publication_preserves_history_and_allows_corrected_revision(self):
+        self.action("activate")
+        initial = (self.directory / "session.json").read_bytes()
+        (self.project / "addition.md").write_bytes(b"Required addition\n")
+        original = r.os.replace
+
+        def fail_session(source, target):
+            if Path(target).name == "session.json":
+                raise OSError("Injected session publication failure")
+            return original(source, target)
+
+        with mock.patch.object(r.os, "replace", side_effect=fail_session), self.assertRaises(OSError):
+            self.action("revise", artifact=["report.md", "addition.md"], reason="Add required evidence")
+        self.assertEqual((self.directory / "session.json").read_bytes(), initial)
+        orphan, = self.directory.glob("scope-*-2.json")
+        saved = orphan.read_bytes()
+        revised = self.action("revise", artifact=["report.md", "addition.md"], reason="Corrected scope after recovery")
+        self.assertEqual(revised["scope_version"], 3)
+        self.assertEqual(orphan.read_bytes(), saved)
+        published, = self.directory.glob("scope-*-3.json")
+        self.assertEqual(r.evidence_read(published)["previous"], ["report.md"])
+        self.assertFalse(self.action("check")["ready_to_close"])
+        self.assertIsNone(self.action("check")["latest_readback"])
+
+    def test_unreadable_web_binding_blocks_before_capture_and_ignores_children(self):
+        self.action("activate", public_web=True, record="report.md")
+        request = {"search_query": [{"q": "synthetic public reference"}]}
+        original_read, original_stat = r.evidence_read, Path.stat
+        for filename in ("web-route.json", "session.json"):
+            for operation in ("read", "stat"):
+                with self.subTest(filename=filename, operation=operation):
+                    def fail_read(path):
+                        if path.name == filename:
+                            raise PermissionError("Injected metadata read failure")
+                        return original_read(path)
+
+                    def fail_stat(path, *args, **kwargs):
+                        if path.name == filename:
+                            raise PermissionError("Injected metadata stat failure")
+                        return original_stat(path, *args, **kwargs)
+
+                    patch = (mock.patch.object(r, "evidence_read", side_effect=fail_read) if operation == "read"
+                             else mock.patch.object(Path, "stat", fail_stat))
+                    with patch:
+                        before = self.hook("PreToolUse", request, name="webrun")
+                        self.assertEqual(before.get("decision"), "block")
+                        self.assertIn("no capture attempt", before["reason"])
+                        self.assertEqual(self.hook("PostToolUse", request, "Synthetic result", name="webrun").get("decision"), "block")
+                        self.assertEqual(self.hook("PreToolUse", request, name="webrun", agent_id="worker"), {})
+        self.assertEqual(list(self.directory.glob("web-*.json")), [])
+        self.action("close", incomplete=True, reason="End synthetic fixture")
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
+
+    def test_web_post_binding_failure_retains_pending_attempt_and_prevents_close(self):
+        self.action("activate", public_web=True, record="report.md")
+        request = {"search_query": [{"q": "synthetic public reference"}]}
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
+        attempt, = self.directory.glob("web-*-pre.json")
+        original = attempt.read_bytes()
+        read = r.evidence_read
+
+        def fail_route(path):
+            if path.name == "web-route.json":
+                raise OSError("Injected route read failure after retrieval")
+            return read(path)
+
+        with mock.patch.object(r, "evidence_read", side_effect=fail_route):
+            self.assertEqual(self.hook("PostToolUse", request, "Synthetic result", name="webrun").get("decision"), "block")
+        self.assertEqual(attempt.read_bytes(), original)
+        self.assertFalse(self.action("check")["web"]["complete"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+
 
 class SnapshotEvidenceTests(StreamEvidenceTests):
     transport = "stream-v2"
+
+    def test_unreadable_diagnostics_remain_optional_and_create_no_proof(self):
+        activation = self.action("activate")
+        self.finish(activation["resume_command"])
+        diagnostic = self.directory / f"diagnostics-{activation['generation']}.json"
+        original = diagnostic.read_bytes()
+        stat = Path.stat
+
+        def fail_stat(path, *args, **kwargs):
+            if path == diagnostic:
+                raise PermissionError("Injected optional telemetry metadata failure")
+            return stat(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "stat", fail_stat):
+            status = self.action("check")
+        self.assertEqual(status["diagnostics"]["status"], "unavailable")
+        self.assertTrue(status["ready_to_close"])
+        self.assertEqual(diagnostic.read_bytes(), original)
+
+    def test_immutable_receipt_survives_metadata_access_failure(self):
+        receipt = self.project / "immutable.json"
+        r.evidence_write(receipt, {"original": True}, immutable=True)
+        original = receipt.read_bytes()
+        stat = os.stat
+
+        def fail_stat(path, *args, **kwargs):
+            if os.fspath(path) == str(receipt):
+                raise PermissionError("Injected metadata access failure")
+            return stat(path, *args, **kwargs)
+
+        # Exercise the documented false-on-OSError predicate on Windows too.
+        with mock.patch.object(os.path, "exists", genericpath.exists), \
+                mock.patch.object(os, "stat", side_effect=fail_stat), self.assertRaises(OSError):
+            r.evidence_write(receipt, {"replacement": True}, immutable=True)
+        self.assertEqual(receipt.read_bytes(), original)
+
+    def test_web_route_metadata_failure_cannot_replace_another_active_owner(self):
+        self.action("activate", public_web=True, record="report.md")
+        route = self.root / ".research/evidence" / self.session / "web-route.json"
+        original = route.read_bytes()
+        other = self.root / "other project"
+        other.mkdir()
+        stat = os.stat
+
+        def fail_stat(path, *args, **kwargs):
+            if os.fspath(path) == str(route):
+                raise PermissionError("Injected route metadata failure")
+            return stat(path, *args, **kwargs)
+
+        with mock.patch.object(os.path, "exists", genericpath.exists), \
+                mock.patch.object(os, "stat", side_effect=fail_stat), self.assertRaises(OSError):
+            r.evidence_web_route(other, other / ".research/evidence" / self.session,
+                                 {"hook_root": str(self.root), "id": "f" * 32})
+        self.assertEqual(route.read_bytes(), original)
 
     def test_complete_status_has_no_actionable_reader_and_closed_staleness_is_preserved(self):
         activation = self.action("activate")

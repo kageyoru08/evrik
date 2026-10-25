@@ -18,6 +18,8 @@ follow original evidence for any unreviewed, changed, stale or disputed claim.
 If the old review did not cover the new use, review that use before relying on
 it. Hash verification only establishes identity. It cannot create native proof,
 prove source access, discharge a scientific obligation, or grant new attempts.
+Metadata access failures remain errors; they cannot stand for missing evidence,
+an empty record history, or an absent preflight requirement.
 
 Declare the actual current deliverables and necessary new evidence for native
 review. An immutable historical source already reviewed for the same use can
@@ -58,6 +60,10 @@ it defaults to the activation command's working directory. A stream activation
 binds that workspace to this project for the native session. There is one active
 public-web destination per owner/workspace. Reader calls diagnose a mismatching
 hook root; they cannot grant a normal close while that binding is wrong.
+If the root web hook cannot read or validate its route/session binding, it
+blocks the operation. A refusal before retrieval creates no capture attempt;
+restore the binding before submitting the intended operation. A failure after
+retrieval preserves any pending attempt and grants no source credit.
 
 Before activation, enumerate every project-relative text artifact required
 for final review, including the shared decision, participant responses and
@@ -68,7 +74,9 @@ New activations use `stream-v2`. If scope changes, use
 `evidence revise --project ROOT --artifact REPORT --artifact CHECKPOINT --artifact NEW --reason TEXT`
 with the **complete** intended scope, including retained files. The previous
 scope record and all receipts remain immutable. The new scope needs a fresh
-manifest read; unchanged artifact units can reuse validated native page proofs
+manifest read. An interrupted publication may consume a scope version; a
+corrected revision uses the next unused version and retains the original files.
+Unchanged artifact units can reuse validated native page proofs
 from this same activation. Changed units need new reads. Removing a file is
 explicitly recorded and does not prove that its obligation was resolved.
 Legacy `pages-v1` and `stream-v1` generations retain their original rules; close

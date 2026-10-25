@@ -80,6 +80,15 @@ def unique_json_object(pairs: list[tuple[str, Any]]) -> dict:
     return result
 
 
+def path_exists(path: Path) -> bool:
+    """Only a missing path is absent; metadata access failures remain errors."""
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant,
@@ -101,7 +110,7 @@ def safe_path(root: Path, *parts: str) -> Path:
         if current.is_symlink() or (hasattr(current, "is_junction") and current.is_junction()):
             raise ResearchError(f"Links or junctions are not allowed in research storage: {current}")
         # Path.resolve also detects junctions on Python 3.11 on Windows.
-        if current.exists() and current.resolve() != current.absolute():
+        if path_exists(current) and current.resolve() != current.absolute():
             raise ResearchError(f"Research storage resolves through a link: {current}")
     if not candidate.resolve().is_relative_to(root.resolve()):
         raise ResearchError("Path escapes the research directory")
@@ -400,14 +409,14 @@ def read_manifest(storage: Path, run_id: str) -> tuple[Path, dict]:
 
 def ledger(storage: Path) -> dict:
     path = safe_path(storage, "launches.json")
-    value = read_json(path) if path.exists() else {"schema_version": 1, "claims": {}}
+    value = read_json(path) if path_exists(path) else {"schema_version": 1, "claims": {}}
     exact_keys(value, {"schema_version", "claims"}, "launch ledger")
     if (type(value["schema_version"]) is not int or value["schema_version"] != 1
             or not isinstance(value["claims"], dict)):
         raise ResearchError("Invalid launch ledger")
     runs = safe_path(storage, "runs")
     manifests = {}
-    if runs.exists():
+    if path_exists(runs):
         for directory in runs.iterdir():
             if directory.is_dir() and RUN_ID.fullmatch(directory.name):
                 _, manifest = read_manifest(storage, directory.name)
@@ -426,7 +435,7 @@ def initialize(project: Path, storage: Path) -> dict:
     with project_lock(storage):
         review = load_review(storage)
         protocol_path = safe_path(storage, "protocol.json")
-        created = not protocol_path.exists()
+        created = not path_exists(protocol_path)
         if created:
             atomic_json(protocol_path, TEMPLATE)
     is_ignored = ignored(project)
@@ -588,9 +597,9 @@ def review_state(envelope: Any) -> tuple[dict, list[dict], dict, dict]:
 
 def load_review(storage: Path, *, required: bool = False) -> dict | None:
     directory = safe_path(storage, "reconciliation")
-    if not directory.exists():
+    if not path_exists(directory):
         runs = safe_path(storage, "runs")
-        if runs.exists():
+        if path_exists(runs):
             for run in runs.iterdir():
                 if run.is_dir() and RUN_ID.fullmatch(run.name):
                     _, manifest = read_manifest(storage, run.name)
@@ -753,7 +762,7 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
                     for _, manifest in (read_manifest(storage, directory.name)
                         for directory in safe_path(storage, "runs").iterdir()
                         if directory.is_dir() and RUN_ID.fullmatch(directory.name))
-                ] if safe_path(storage, "runs").exists() else []},
+                ] if path_exists(safe_path(storage, "runs")) else []},
                 "limits": "Entry and dispositions are caller judgments, not machine verification. Coverage is selected text, not proof of completeness or understanding; only retained comparisons compute content equality. Independent units remain unresolved outside this work. Direct shell actions and final-checkpoint completeness are not mediated."}
 
 
@@ -815,7 +824,7 @@ def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
                     "fingerprint": fingerprint, "manifest": str(destination / "manifest.json")}
         finally:
             # Only these two exclusively created files can exist in a preparation.
-            if temporary.exists():
+            if path_exists(temporary):
                 (temporary / "source.zip").unlink(missing_ok=True)
                 (temporary / "manifest.json").unlink(missing_ok=True)
                 temporary.rmdir()
@@ -969,7 +978,7 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         if run_id in launches["claims"] or manifest.get("status") != "prepared":
             raise ResearchError("This run already has a launch claim or is not prepared; inspect it. Never relaunch this id.")
         protocol = verify_snapshot(storage, directory, manifest)
-        if safe_path(storage, "preflight.json").exists() and not manifest.get("preflight_record"):
+        if path_exists(safe_path(storage, "preflight.json")) and not manifest.get("preflight_record"):
             raise ResearchError("This run predates project preflight; prepare an attributable snapshot")
         reconciliation = load_review(storage, required=True)
         captured_review = manifest.get("reconciliation")
@@ -998,7 +1007,7 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
             raise ResearchError("Project launch budget exhausted (uncertain claims also consume a slot)")
         result_path = safe_path(storage, "runs", run_id, "result.json")
         log_path = safe_path(storage, "runs", run_id, "run.log")
-        if result_path.exists() or log_path.exists():
+        if path_exists(result_path) or path_exists(log_path):
             raise ResearchError("Prepared run already contains execution files; inspect it and prepare an explicit replicate")
         source = extract_source(storage, directory)
         command = [part.replace("{python}", sys.executable).replace("{result}", str(result_path))
@@ -1081,7 +1090,7 @@ def inspect(storage: Path, run_id: str | None) -> dict:
                     if unresolved else "Execution status and evidence validity are separate; use compare for the metric decision."}
         runs = safe_path(storage, "runs")
         summaries = []
-        if runs.exists():
+        if path_exists(runs):
             for directory in sorted(runs.iterdir()):
                 if directory.is_dir() and RUN_ID.fullmatch(directory.name):
                     _, manifest = read_manifest(storage, directory.name)
@@ -1414,7 +1423,7 @@ def evidence_page_matches(directory: Path, activation: dict, reader: str, receip
     matches = []
     for index in range(len(frames)):
         path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
-        if not path.exists():
+        if not path_exists(path):
             continue
         frame = frames[index]
         match = evidence_read(path)
@@ -1474,7 +1483,7 @@ def evidence_reader_progress(directory: Path, activation: dict, reader: str, rec
 
 
 def evidence_write(path: Path, value: dict, *, immutable: bool = False) -> None:
-    if immutable and path.exists():
+    if immutable and path_exists(path):
         if evidence_read(path) != value:
             raise ResearchError("Conflicting evidence receipt; original preserved")
         return
@@ -1483,7 +1492,7 @@ def evidence_write(path: Path, value: dict, *, immutable: bool = False) -> None:
 
 def evidence_session(project: Path, directory: Path, session_id: str) -> dict | None:
     path = safe_path(directory, "session.json")
-    if not path.exists():
+    if not path_exists(path):
         return None
     state = evidence_read(path)
     exact_keys(state, {"schema_version", "project", "session_id", "owner_thread_id", "activations"}, "evidence session")
@@ -1577,7 +1586,7 @@ def evidence_save_session(directory: Path, state: dict) -> None:
 def evidence_reader_activation(project: Path, directory: Path, session_id: str, *, refresh: bool = False) -> dict | None:
     """Reader routing cache only. Full session and scope remain check/close authority."""
     path = safe_path(directory, "reader-state.json")
-    if path.exists():
+    if path_exists(path):
         cache = evidence_read(path)
         exact_keys(cache, {"project", "session_id", "session_stamp", "scope_stamp", "activation"}, "reader state cache")
         activation = cache["activation"]
@@ -1610,7 +1619,7 @@ def evidence_dependencies(project: Path, storage: Path, experiment: bool) -> dic
     except ResearchError as exc:
         result.update(ready=False, reconciliation_issue=str(exc))
     runs = safe_path(storage, "runs")
-    for directory in sorted(runs.iterdir()) if runs.exists() else []:
+    for directory in sorted(runs.iterdir()) if path_exists(runs) else []:
         if not directory.is_dir() or not RUN_ID.fullmatch(directory.name):
             continue
         _, manifest = read_manifest(storage, directory.name)
@@ -1709,7 +1718,7 @@ def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[
     for capture in captures:
         match_path = safe_path(directory, f"source-matched-{capture['id']}.json")
         matched = False
-        if match_path.exists():
+        if path_exists(match_path):
             match = evidence_read(match_path)
             receipt_id = match.get("receipt_id")
             if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_id):
@@ -1724,7 +1733,7 @@ def evidence_sources(project: Path, directory: Path, activation: dict) -> tuple[
     text, record_references, literal_references = "", set(), set()
     if captures:
         path = evidence_artifact(project, activation["record"])
-        if path.exists():
+        if path_exists(path):
             if not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
                 raise ResearchError("Evidence record must be a regular UTF-8 file")
             if activation.get("reader_transport") in STREAM_TRANSPORTS:
@@ -1928,7 +1937,7 @@ class EvidenceFrames:
         self.directory, self.activation, self.receipt_id, self.bundle = directory, activation, receipt_id, bundle
         self.parts = bundle["parts"]
         reuse_path = safe_path(directory, f"reuse-{receipt_id}.json")
-        self.reused = {int(index) for index in evidence_read(reuse_path)["pages"]} if reuse_path.exists() else set()
+        self.reused = {int(index) for index in evidence_read(reuse_path)["pages"]} if path_exists(reuse_path) else set()
         self.frames = {}
         if not isinstance(self.parts, list) or not self.parts:
             raise ResearchError("Reader manifest has no parts")
@@ -2070,7 +2079,7 @@ def evidence_stream_matches(directory: Path, activation: dict, receipt_id: str, 
     frames, matches = evidence_page_matches(directory, activation, "readback", receipt_id, bundle)
     present = {item["index"] for item in matches}
     path = safe_path(directory, f"reuse-{receipt_id}.json")
-    reused = evidence_read(path)["pages"] if path.exists() else {}
+    reused = evidence_read(path)["pages"] if path_exists(path) else {}
     units = {unit["name"]: unit["sha256"] for unit in bundle["units"]}
     prior = {}
     for index, source in reused.items():
@@ -2100,7 +2109,7 @@ def evidence_pending_pages(directory: Path, receipt_id: str, bundle: dict) -> li
     present = {int(path.stem[len(prefix):]) for path in directory.glob(prefix + "*.json")
                if re.fullmatch(r"0|[1-9][0-9]*", path.stem[len(prefix):])}
     reuse = safe_path(directory, f"reuse-{receipt_id}.json")
-    if reuse.exists():
+    if path_exists(reuse):
         present.update(int(index) for index in evidence_read(reuse)["pages"])
     return [index for index in range(len(bundle["parts"])) if index not in present]
 
@@ -2209,7 +2218,7 @@ def evidence_index_frame(directory: Path, activation: dict, receipt_id: str, ind
 
 def evidence_index_pending(directory: Path, header: dict, *, cache: dict | None = None) -> int | None:
     path = safe_path(directory, f"index-{header['receipt_id']}", "cursor.json")
-    if not path.exists():
+    if not path_exists(path):
         return None
     cursor = evidence_read(path)
     exact_keys(cursor, {"next"}, "reader cursor")
@@ -2217,7 +2226,7 @@ def evidence_index_pending(directory: Path, header: dict, *, cache: dict | None 
     if index is not None and (type(index) is not int or not 0 <= index < header["count"]):
         raise ResearchError("Invalid reader cursor")
     # Markers advance scheduling only. Check/close independently validate proof.
-    while index is not None and safe_path(directory, f"page-matched-readback-{header['receipt_id']}-{index}.json").exists():
+    while index is not None and path_exists(safe_path(directory, f"page-matched-readback-{header['receipt_id']}-{index}.json")):
         index = evidence_index_page(directory, header, index, cache=cache)["following"]
     if index != original:
         evidence_write(path, {"next": index})
@@ -2277,13 +2286,13 @@ def evidence_status(project: Path, storage: Path, directory: Path, activation: d
                                and activation["handler_sha256"] == file_digest(Path(__file__)))
             match = safe_path(directory, f"matched-{receipt_id}.json")
             verified = evidence_stream_matches(directory, activation, receipt_id, bundle) if bundle.get("parts") else None
-            if match.exists() or activation.get("reader_transport") == "stream-v2":
+            if path_exists(match) or activation.get("reader_transport") == "stream-v2":
                 if verified:
                     frames, matches = verified
                     aggregate = evidence_reader_aggregate(activation, "readback", receipt_id, matches)
                     if len(matches) == len(frames):
                         frames.verify_units()
-                        result["native_response_matched"] = not match.exists() or evidence_read(match) == aggregate
+                        result["native_response_matched"] = not path_exists(match) or evidence_read(match) == aggregate
                         if result["native_response_matched"] and validated is not None:
                             validated["readback"] = aggregate
                 else:
@@ -2339,7 +2348,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
         if args.experiment:
             evidence_dependencies(project, storage, True)
         directory.mkdir(parents=True, exist_ok=True)
-    elif not safe_path(directory, "session.json").exists():
+    elif not path_exists(safe_path(directory, "session.json")):
         return {"status": "not_activated", "ready_to_close": False, "semantic_review_verified": False}
     with project_lock(storage):
         if args.operation == "next" or (args.operation == "readback" and args.receipt is not None):
@@ -2433,6 +2442,9 @@ def evidence_action(args: argparse.Namespace) -> dict:
                 raise ResearchError("Revised scope must retain the public source record")
             if artifacts != activation["artifacts"]:
                 version = activation["scope_version"] + 1
+                # An interrupted session publication may leave an immutable scope behind.
+                while path_exists(safe_path(directory, f"scope-{activation['id']}-{version}.json")):
+                    version += 1
                 evidence_write(safe_path(directory, f"scope-{activation['id']}-{version}.json"),
                     {"version": version, "artifacts": artifacts, "previous": activation["artifacts"],
                      "reason": args.reason}, immutable=True)
@@ -2472,7 +2484,7 @@ def evidence_action(args: argparse.Namespace) -> dict:
                     bundle = evidence_stream_bundle(project, storage, directory, activation)
                 receipt_id = digest(bundle)
                 path = safe_path(directory, f"readback-{receipt_id}.json")
-                if not path.exists():
+                if not path_exists(path):
                     evidence_write(path, bundle, immutable=True)
                     evidence_stream_reuse(directory, activation, receipt_id, bundle)
                 frames = evidence_reader_pages(activation, "readback", receipt_id, bundle, directory)
@@ -2614,13 +2626,13 @@ def evidence_public_request(value: Any) -> bool:
 
 
 def evidence_diagnostics(directory: Path, activation: dict) -> dict:
-    path = safe_path(directory, f"diagnostics-{activation['id']}.json")
-    if not path.exists():
-        return {"status": "not_observed", "note": "No routed hook event recorded; this does not prove hooks are absent."}
     try:
+        path = safe_path(directory, f"diagnostics-{activation['id']}.json")
+        if not path_exists(path):
+            return {"status": "not_observed", "note": "No routed hook event recorded; this does not prove hooks are absent."}
         state = read_json(path)
         first = safe_path(directory, f"diagnostics-{activation['id']}-first.json")
-        if first.exists():
+        if path_exists(first):
             state["first_failure"] = read_json(first)
         return state
     except (ResearchError, OSError, ValueError, TypeError):
@@ -2636,7 +2648,7 @@ def evidence_web_route(project: Path, directory: Path, activation: dict) -> None
     target.mkdir(parents=True, exist_ok=True)
     with project_lock(target):
         path = safe_path(target, "web-route.json")
-        if path.exists():
+        if path_exists(path):
             old = evidence_read(path)
             if old["project"] != str(project):
                 previous, previous_storage = evidence_paths(old["project"])
@@ -2650,7 +2662,7 @@ def evidence_diagnostic(directory: Path, activation: dict, event: dict, stage: s
     """Best-effort operational telemetry, separate from native proof; no raw payload."""
     try:
         path = safe_path(directory, f"diagnostics-{activation['id']}.json")
-        state = read_json(path) if path.exists() else {"status": "observed", "events": 0, "stages": {}, "first_failure": None}
+        state = read_json(path) if path_exists(path) else {"status": "observed", "events": 0, "stages": {}, "first_failure": None}
         response = event.get("tool_response")
         item = {"at": utc_now(), "phase": event.get("hook_event_name"), "stage": stage,
                 "failed": failed, "response_type": type(response).__name__,
@@ -2666,7 +2678,7 @@ def evidence_diagnostic(directory: Path, activation: dict, event: dict, stage: s
                     output.write(evidence_output(item))
             except FileExistsError:
                 pass
-        if first.exists():
+        if path_exists(first):
             state["first_failure"] = read_json(first)
         atomic_json(path, state)
     except (OSError, ValueError, ResearchError, KeyError, TypeError):
@@ -2675,6 +2687,7 @@ def evidence_diagnostic(directory: Path, activation: dict, event: dict, stage: s
 
 def evidence_hook() -> dict:
     active = False
+    web_lookup = False
     directory, activation, event = None, None, None
     failure_stage = "active_capture"
     try:
@@ -2690,6 +2703,10 @@ def evidence_hook() -> dict:
         project, storage = evidence_paths(str(Path.cwd()))
         hook_root = project
         session_id = evidence_id(event.get("session_id"))
+        web_lookup = (name == "webrun" and not any(key in event for key in ("agent_id", "agent_type"))
+                      and isinstance(event.get("cwd"), str) and evidence_paths(event["cwd"])[0] == hook_root)
+        if web_lookup:
+            failure_stage = "public_web_binding"
         tool_input = event.get("tool_input")
         parsed = evidence_command_argv(tool_input.get("command")) if isinstance(tool_input, dict) and name == "Bash" else None
         target = parsed[8] if parsed else None
@@ -2697,7 +2714,7 @@ def evidence_hook() -> dict:
         route = None
         if name == "webrun":
             route_path = safe_path(storage, "evidence", session_id, "web-route.json")
-            if route_path.exists():
+            if path_exists(route_path):
                 route = evidence_read(route_path)
                 if route["session_id"] != session_id:
                     raise ResearchError("Web route owner mismatch")
@@ -2710,10 +2727,14 @@ def evidence_hook() -> dict:
         else:
             state = evidence_session(project, directory, session_id)
             activation = state["activations"][-1] if state else None
-        if activation is None or activation["state"] != "active":
+        if activation is None:
+            if route:
+                raise ResearchError("Web route has no resolvable evidence session")
+            return {}
+        if activation["state"] != "active":
             return {}
         if route and (route["generation"] != activation["id"] or activation.get("hook_root") != str(hook_root)):
-            return {}
+            raise ResearchError("Web route differs from the active evidence binding")
         if any(key in event for key in ("agent_id", "agent_type")):
             evidence_diagnostic(directory, activation, event, "child_event_ignored")
             return {}
@@ -2794,7 +2815,7 @@ def evidence_hook() -> dict:
                 record["request"] = tool_input
             if phase == "PostToolUse":
                 pre_path = safe_path(directory, prefix + "-pre.json")
-                pre = evidence_read(pre_path) if pre_path.exists() else None
+                pre = evidence_read(pre_path) if path_exists(pre_path) else None
                 matched_pre = (pre is not None and pre["status"] == "attempted"
                                and pre["request_sha256"] == record["request_sha256"])
                 response = event.get("tool_response")
@@ -2866,14 +2887,14 @@ def evidence_hook() -> dict:
                                 "sha256": identity, "bytes": len(raw_response), "representation": "ordinary_response_json",
                                 "native_capture": False, "reason": "Unsupported text representation; original operation remains incomplete"}
             failure_stage = "receipt_persistence"
-            if path.exists() and evidence_read(path) != record:
+            if path_exists(path) and evidence_read(path) != record:
                 evidence_write(safe_path(directory, f"web-{activation['id']}-{call}-conflict-{digest(record)}.json"),
                                {"call": call, "phase": "conflict", "status": "incomplete", "sha256": digest(record)}, immutable=True)
                 raise ResearchError("Conflicting native response")
             evidence_write(path, record, immutable=True)
             if reader and phase == "PostToolUse":
                 page_path = safe_path(directory, f"page-matched-{reader}-{receipt_id}-{index}.json")
-                if not page_path.exists():
+                if not path_exists(page_path):
                     evidence_write(page_path, record, immutable=True)
                 # next advances its cursor from durable markers; Post keeps native proof only.
                 # stream-v2 records only this page here. Full proof/freshness checks
@@ -2887,7 +2908,7 @@ def evidence_hook() -> dict:
                     match_path = (safe_path(directory, f"matched-{receipt_id}.json") if reader == "readback" else
                                   safe_path(directory, f"source-matched-{bundle['capture']['id']}.json")
                                   if bundle["capture"] is not None else None)
-                    if match_path is not None and not match_path.exists():
+                    if match_path is not None and not path_exists(match_path):
                         evidence_write(match_path, evidence_reader_aggregate(activation, reader, receipt_id, matches), immutable=True)
             if record["status"] == "incomplete":
                 failure_stage = "capture_validation"
@@ -2903,7 +2924,10 @@ def evidence_hook() -> dict:
         if active and directory is not None and activation is not None and isinstance(event, dict):
             evidence_diagnostic(directory, activation, event, failure_stage, True)
         # No raw input, private paths, response text or exception detail is logged.
-        return {"decision": "block", "reason": f"Research evidence capture incomplete [stage={failure_stage}]; preserve the original operation and do not retry retrieval. Native delivery handling remains a platform boundary."} if active else {}
+        if web_lookup and failure_stage == "public_web_binding" and phase == "PreToolUse":
+            return {"decision": "block", "reason": "Web request deferred before retrieval; no capture attempt was recorded. "
+                    "Restore the public web binding before submitting the intended operation."}
+        return {"decision": "block", "reason": f"Research evidence capture incomplete [stage={failure_stage}]; preserve the original operation and do not retry retrieval. Native delivery handling remains a platform boundary."} if active or web_lookup else {}
 
 
 def record_assets(project: Path, storage: Path, names: list[str]) -> list[dict]:
@@ -2917,7 +2941,7 @@ def record_assets(project: Path, storage: Path, names: list[str]) -> list[dict]:
             raise ResearchError(f"Record input must be a regular file: {name}")
         identity, size = file_digest(source), source.stat().st_size
         destination = safe_path(folder, identity)
-        if not destination.exists():
+        if not path_exists(destination):
             # Failed staging copies remain diagnostic artifacts, never final objects.
             temporary = destination.with_name(f".{identity}.{uuid.uuid4().hex}.tmp")
             with temporary.open("xb") as output, source.open("rb") as input_file:
@@ -2947,7 +2971,7 @@ def record_assets(project: Path, storage: Path, names: list[str]) -> list[dict]:
 
 def record_ids(storage: Path) -> list[str]:
     ledger_path = safe_path(storage, "records", "ledger.json")
-    ids = read_json(ledger_path) if ledger_path.exists() else []
+    ids = read_json(ledger_path) if path_exists(ledger_path) else []
     if not isinstance(ids, list):
         raise ResearchError("Invalid record ledger")
     if any(not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{64}", identity) for identity in ids):
@@ -3067,7 +3091,7 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
         result["clean_tree"] = not bool(git(project, "status", "--porcelain=v1", "--untracked-files=normal"))
         result["storage_ignored"] = ignored(project)
         configuration = safe_path(storage, "preflight.json")
-        if not configuration.exists():
+        if not path_exists(configuration):
             result.update(ready=result["clean_tree"] and result["storage_ignored"] and remaining > 0,
                           project_checks="not_configured")
             return result
@@ -3161,7 +3185,7 @@ def preflight_receipt(project: Path, storage: Path, identity: str) -> dict:
 
 
 def check_preflight(project: Path, storage: Path) -> str | None:
-    if not safe_path(storage, "preflight.json").exists():
+    if not path_exists(safe_path(storage, "preflight.json")):
         return
     current = preflight(project, storage)
     latest = read_json(safe_path(storage, "preflight-latest.json"))
@@ -3203,7 +3227,7 @@ def workflow_status(args: argparse.Namespace) -> dict:
                         "decision": "accepted" if usable and all(value == "accept" for value in decisions) else
                                     "rejected" if usable and "reject" in decisions else "unresolved"})
     integrity = {"saved_records": "verified", "experiment_artifacts": "not_attached"}
-    if safe_path(storage, "protocol.json").exists():
+    if path_exists(safe_path(storage, "protocol.json")):
         try:
             dependencies = evidence_dependencies(project, storage, True)
             integrity["experiment_artifacts"] = "verified" if dependencies["ready"] else "incomplete"

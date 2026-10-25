@@ -1,5 +1,6 @@
 """Observable record, recovery and project preflight behavior; no model calls."""
 import argparse
+import genericpath
 import hashlib
 import json
 import os
@@ -73,6 +74,27 @@ class WorkflowTests(unittest.TestCase):
                     with self.assertRaisesRegex(r.ResearchError, "record ledger"):
                         operation()
                     self.assertEqual({p.relative_to(records): p.read_bytes() for p in records.rglob("*") if p.is_file()}, before)
+
+    def test_metadata_access_failure_cannot_bypass_preflight_or_reset_record_history(self):
+        self.record("save", input="review.md")
+        configuration = self.storage / "preflight.json"
+        r.atomic_json(configuration, {"checks": [], "required_runs": 1, "result_fixture": None})
+        ledger = self.storage / "records/ledger.json"
+        before = {p.relative_to(self.storage): p.read_bytes() for p in self.storage.rglob("*") if p.is_file()}
+        stat = os.stat
+        operations = ((configuration, lambda: r.check_preflight(self.project, self.storage)),
+                      (ledger, lambda: r.record_append(self.storage, {"kind": "preserve history"})))
+        for target, operation in operations:
+            with self.subTest(metadata=target.name):
+                def fail_stat(path, *args, **kwargs):
+                    if os.fspath(path) == str(target):
+                        raise PermissionError("Injected metadata access failure")
+                    return stat(path, *args, **kwargs)
+
+                with patch.object(os.path, "exists", genericpath.exists), \
+                        patch.object(os, "stat", side_effect=fail_stat), self.assertRaises(OSError):
+                    operation()
+                self.assertEqual({p.relative_to(self.storage): p.read_bytes() for p in self.storage.rglob("*") if p.is_file()}, before)
 
     def test_interrupted_record_copy_recovers_without_overwriting_existing_objects(self):
         raw = b"Large immutable record\n" * 4096
