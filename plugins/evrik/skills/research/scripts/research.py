@@ -2945,13 +2945,21 @@ def record_assets(project: Path, storage: Path, names: list[str]) -> list[dict]:
     return assets
 
 
-def record_entries(storage: Path) -> list[dict]:
+def record_ids(storage: Path) -> list[str]:
     ledger_path = safe_path(storage, "records", "ledger.json")
     ids = read_json(ledger_path) if ledger_path.exists() else []
+    if not isinstance(ids, list):
+        raise ResearchError("Invalid record ledger")
+    if any(not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{64}", identity) for identity in ids):
+        raise ResearchError("Invalid record ledger identity")
+    if len(set(ids)) != len(ids):
+        raise ResearchError("Duplicate record ledger identity")
+    return ids
+
+
+def record_entries(storage: Path) -> list[dict]:
     entries = []
-    for identity in ids:
-        if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{64}", identity):
-            raise ResearchError("Invalid record ledger identity")
+    for identity in record_ids(storage):
         value = evidence_read(safe_path(storage, "records", "entries", identity + ".json"))
         if digest(value) != identity:
             raise ResearchError("Record identity mismatch")
@@ -2964,12 +2972,12 @@ def record_entries(storage: Path) -> list[dict]:
 
 
 def record_append(storage: Path, value: dict) -> dict:
+    ids = record_ids(storage)
     folder = safe_path(storage, "records", "entries")
     folder.mkdir(parents=True, exist_ok=True)
     identity = digest(value)
     evidence_write(safe_path(folder, identity + ".json"), value, immutable=True)
     path = safe_path(storage, "records", "ledger.json")
-    ids = read_json(path) if path.exists() else []
     duplicate = identity in ids
     if not duplicate:
         atomic_json(path, [*ids, identity])
@@ -3148,13 +3156,9 @@ def check_preflight(project: Path, storage: Path) -> str | None:
     current = preflight(project, storage)
     latest = read_json(safe_path(storage, "preflight-latest.json"))
     prior = preflight_receipt(project, storage, latest["record_id"])
-    identities = read_json(safe_path(storage, "records", "ledger.json"))
-    if not isinstance(identities, list):
-        raise ResearchError("Invalid record ledger")
+    identities = record_ids(storage)
     latest_id = None
     for identity in reversed(identities):
-        if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{64}", identity):
-            raise ResearchError("Invalid record ledger identity")
         entry = evidence_read(safe_path(storage, "records", "entries", identity + ".json"))
         if digest(entry) != identity:
             raise ResearchError("Record identity mismatch")

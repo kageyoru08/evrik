@@ -55,6 +55,25 @@ class WorkflowTests(unittest.TestCase):
             self.status(first["snapshot"])
         self.assertEqual(previous.read_bytes(), replacement)
 
+    def test_record_ledger_rejects_invalid_shapes_and_duplicates_without_writes(self):
+        saved = self.record("save", input="review.md")
+        candidate = {key: value for key, value in r.record_entries(self.storage)[0].items() if key != "id"}
+        candidate["key"] = "new event"
+        self.file.write_bytes(b"A new version must not be captured with an invalid ledger")
+        ledger = self.storage / "records/ledger.json"
+        records = self.storage / "records"
+        invalid = ({saved["id"]: None}, [saved["id"], saved["id"]], {}, "", [{}])
+        operations = (("status", self.status), ("save", lambda: self.record("save", input="review.md")),
+                      ("append", lambda: r.record_append(self.storage, candidate)))
+        for value in invalid:
+            for name, operation in operations:
+                with self.subTest(ledger=value, operation=name):
+                    ledger.write_text(json.dumps(value), encoding="utf-8")
+                    before = {p.relative_to(records): p.read_bytes() for p in records.rglob("*") if p.is_file()}
+                    with self.assertRaisesRegex(r.ResearchError, "record ledger"):
+                        operation()
+                    self.assertEqual({p.relative_to(records): p.read_bytes() for p in records.rglob("*") if p.is_file()}, before)
+
     def test_interrupted_record_copy_recovers_without_overwriting_existing_objects(self):
         raw = b"Large immutable record\n" * 4096
         self.file.write_bytes(raw)
@@ -281,6 +300,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(failed["result"]["checks"][0]["exit_code"], 1)
         with self.assertRaisesRegex(r.ResearchError, "preflight is missing, failed or stale"):
             r.check_preflight(self.project, self.storage)
+
+        ledger = self.storage / "records/ledger.json"
+        original_ledger = ledger.read_bytes()
+        duplicate = json.dumps([*json.loads(original_ledger), original]).encode("utf-8")
+        ledger.write_bytes(duplicate)
+        with self.assertRaisesRegex(r.ResearchError, "Duplicate record ledger identity"):
+            r.check_preflight(self.project, self.storage)
+        self.assertEqual(ledger.read_bytes(), duplicate)
+        ledger.write_bytes(original_ledger)
 
         # A new successful fixture-only check may have the same result as an older one.
         fixture = self.storage / "fixture.json"
