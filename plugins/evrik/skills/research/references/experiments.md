@@ -216,7 +216,7 @@ The snapshot has no Git repository. The runner adds an explanatory `.git` bounda
 
 ## Execute and inspect
 
-`run` executes the prepared command from its source snapshot and records logs and state. The evaluator must write JSON of this shape to `{result}`, using the configured metric name:
+`run` executes the prepared command from its source snapshot and records logs and state. Use an explicit relative path (such as `./bin/evaluator.exe`) for a snapshot-local executable; bare executable names use platform lookup. The evaluator must write JSON of this shape to `{result}`, using the configured metric name:
 
 ```json
 {"metrics": {"mse": 0.125}}

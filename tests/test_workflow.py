@@ -123,6 +123,31 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(status["usable_for_current_scope"])
         self.assertIn(failed["id"], [entry["id"] for entry in r.record_entries(self.storage)])
 
+    def test_empty_reviewer_is_rejected_and_legacy_packet_remains_unresolved(self):
+        def cli(*arguments):
+            return subprocess.run([sys.executable, "-B", str(RUNNER), "record", *arguments,
+                                   "--project", str(self.project)], capture_output=True, text=True, encoding="utf-8", timeout=10)
+        for actor in ("", "   "):
+            with self.subTest(reviewer=repr(actor)):
+                rejected = cli("freeze", "--key", "packet", "--artifact", "review.md", "--reviewer", actor)
+                self.assertEqual(rejected.returncode, 2, rejected.stdout or rejected.stderr)
+                self.assertIn("nonempty", json.loads(rejected.stderr)["error"])
+                # These values were admitted by older versions; keep their original records intact.
+                assets = r.record_assets(self.project, self.storage, ["review.md"])
+                packet = r.record_append(self.storage, {"kind": "freeze", "key": "legacy", "assets": assets, "reviewers": [actor]})
+                r.record_append(self.storage, {"kind": "review", "key": "legacy-vote", "assets": assets,
+                    "packet": packet["id"], "reviewer": actor, "status": "completed", "decision": "accept",
+                    "model": None, "attribution": "caller_reported; inspect the saved native receipt"})
+                before = {path: path.read_bytes() for path in (self.storage / "records").rglob("*") if path.is_file()}
+                rejected = cli("review", "--key", "vote", "--packet", packet["id"], "--reviewer", actor,
+                               "--status", "completed", "--decision", "accept", "--input", "review.md")
+                self.assertEqual(rejected.returncode, 2, rejected.stdout or rejected.stderr)
+                status = next(p for p in self.status()["reviewer_decisions"] if p["packet"] == packet["id"])
+                self.assertEqual(status["missing_reviews"], [actor])
+                self.assertFalse(status["usable_for_current_scope"])
+                self.assertEqual(status["decision"], "unresolved")
+                self.assertEqual(before, {path: path.read_bytes() for path in (self.storage / "records").rglob("*") if path.is_file()})
+
     def test_source_import_identity_disagreement_is_not_native_or_semantic_support(self):
         metadata = {"provider": "exa", "call_id": "ordinary-call-1", "requested_url": "https://example.org/v1",
                     "resolved_url": "https://example.org/v2", "title": "Observed title", "version": "v2",

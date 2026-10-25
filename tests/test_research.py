@@ -716,6 +716,24 @@ class RunnerTests(unittest.TestCase):
                 self.assertTrue(inspected["launch_claimed"])
                 self.assertFalse(inspected["unresolved"])
 
+    @unittest.skipUnless(os.name == "nt", "Windows executable lookup ignores child cwd")
+    def test_relative_executable_launches_from_captured_source(self):
+        binary = self.project / "bin" / "writer.exe"
+        binary.parent.mkdir()
+        binary.write_bytes((Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe").read_bytes())
+        self.commit_file("write-result.cmd", '@echo off\n> "%~1" echo {"metrics":{"mse":1}}\n')
+        git(self.project, "add", "bin/writer.exe")
+        git(self.project, "commit", "-m", "Capture fixed native writer")
+        self.protocol(lambda p: p.update(command=["bin/writer.exe", "/d", "/c", "write-result.cmd", "{result}"]))
+        run_id = self.prepare("relative-native-writer")
+        completed = subprocess.run([sys.executable, str(RUNNER), "run", "--project", str(self.project), "--id", run_id],
+                                   cwd=self.temporary.name, capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+        result = json.loads(completed.stdout)
+        self.assertEqual((result["status"], result["exit_code"]), ("completed", 0))
+        self.assertEqual(result["evidence"]["metrics"], {"mse": 1})
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 1)
+
     def test_concurrent_run_claims_enforce_single_launch_and_project_budget(self):
         for distinct in (False, True):
             with self.subTest(distinct_run_ids=distinct):

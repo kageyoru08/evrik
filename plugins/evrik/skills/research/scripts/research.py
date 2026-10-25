@@ -1003,6 +1003,9 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         source = extract_source(storage, directory)
         command = [part.replace("{python}", sys.executable).replace("{result}", str(result_path))
                    for part in protocol["command"]]
+        # Windows resolves executable paths before applying the child's cwd.
+        if os.name == "nt" and os.path.dirname(command[0]):
+            command[0] = os.path.abspath(os.path.join(source, command[0]))
         launched_at = utc_now()
         launches["claims"][run_id] = {"claimed_at": launched_at}
         atomic_json(safe_path(storage, "launches.json"), launches)
@@ -3007,6 +3010,10 @@ def record_action(args: argparse.Namespace) -> dict:
     storage.mkdir(exist_ok=True)
     if not args.key or not args.key.strip():
         raise ResearchError("A record needs a nonempty key")
+    if args.operation in {"freeze", "review"}:
+        reviewers = args.reviewer if args.operation == "freeze" else [args.reviewer]
+        if not reviewers or any(not isinstance(actor, str) or not actor.strip() for actor in reviewers):
+            raise ResearchError("Reviewers must have nonempty identities")
     with project_lock(storage):
         entries = record_entries(storage)
         by_id = {item["id"]: item for item in entries}
@@ -3159,7 +3166,7 @@ def workflow_status(args: argparse.Namespace) -> dict:
             if item["kind"] == "review" and item["packet"] == packet["id"]:
                 votes[item["reviewer"]] = {"record_id": item["id"], "status": "withdrawn" if item["id"] in withdrawn else item["status"],
                                           "decision": None if item["id"] in withdrawn else item["decision"], "model": item["model"]}
-        missing = [actor for actor in packet["reviewers"] if votes.get(actor, {}).get("status") != "completed"]
+        missing = [actor for actor in packet["reviewers"] if not actor.strip() or votes.get(actor, {}).get("status") != "completed"]
         usable = not (missing or stale or packet["id"] in withdrawn)
         decisions = [vote["decision"] for vote in votes.values()]
         packets.append({"packet": packet["id"], "stale_artifacts": stale, "missing_reviews": missing,
