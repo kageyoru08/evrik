@@ -760,8 +760,8 @@ def reconcile(project: Path, storage: Path, args: argparse.Namespace) -> dict:
 def prepare(project: Path, storage: Path, args: argparse.Namespace) -> dict:
     if not ignored(project):
         raise ResearchError(".research/ must be ignored by Git; add it to .gitignore and commit that change")
-    protocol = validate_protocol(read_json(safe_path(storage, "protocol.json")))
     with project_lock(storage):
+        protocol = validate_protocol(read_json(safe_path(storage, "protocol.json")))
         if git(project, "status", "--porcelain=v1", "--untracked-files=normal"):
             raise ResearchError("Commit or otherwise preserve changes before prepare; the Git tree must be clean")
         preflight_id = check_preflight(project, storage)

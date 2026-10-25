@@ -684,6 +684,48 @@ class InputBoundaryTests(unittest.TestCase):
         self.assertEqual(self.invoke("inspect")["runs"], [])
         self.assert_no_execution()
 
+    def test_prepare_reads_protocol_after_waiting_for_preflight_lock(self):
+        runner = runpy.run_path(str(RUNNER), run_name="runner_under_test")
+        project = self.project.resolve()
+        storage = project / ".research"
+        runner["atomic_json"](storage / "preflight.json", {"checks": [], "required_runs": 1, "result_fixture": None})
+        reached = self.root / "prepare-waiting"
+        wrapper = self.root / "prepare_lock_barrier.py"
+        # Signal immediately before the real OS lock; do not replace its behavior.
+        wrapper.write_text(
+            "import runpy\nfrom pathlib import Path\n"
+            f"runner = runpy.run_path({str(RUNNER)!r}, run_name='runner_under_test')\n"
+            "real_lock = runner['project_lock']\n"
+            "def announced_lock(*args, **kwargs):\n"
+            f" Path({str(reached)!r}).write_text('waiting', encoding='utf-8')\n"
+            " return real_lock(*args, **kwargs)\n"
+            "runner['prepare'].__globals__['project_lock'] = announced_lock\n"
+            "raise SystemExit(runner['main']())\n", encoding="utf-8")
+        proc = None
+        try:
+            with runner["project_lock"](storage):
+                proc = subprocess.Popen([sys.executable, "-X", "utf8", "-B", str(wrapper), "prepare",
+                    "--project", str(project), "--label", "concurrent preflight"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                deadline = time.monotonic() + 10
+                while not reached.exists() and proc.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(reached.exists(), "Prepare did not reach the held OS lock")
+                self.protocol(lambda p: p.update(question="Updated before the successful preflight"))
+                checked = runner["preflight"](project, storage, True)
+                self.assertTrue(checked["ready"], checked)
+            stdout, stderr = proc.communicate(timeout=20)
+            self.assertEqual(proc.returncode, 0, stderr or stdout)
+            directory, manifest = runner["read_manifest"](storage, json.loads(stdout)["id"])
+            runner["verify_snapshot"](storage, directory, manifest)
+            self.assertEqual(manifest["protocol_sha256"], checked["binding"]["protocol"])
+            self.assertEqual(manifest["protocol"]["question"], "Updated before the successful preflight")
+            self.assert_no_execution()
+        finally:
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+                proc.communicate(timeout=5)
+
     def test_git_change_during_prepare_rejects_at_a_deterministic_archive_barrier(self):
         reached, release = self.root / "archive-ready", self.root / "release-archive"
         wrapper = self.root / "prepare_barrier.py"
