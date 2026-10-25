@@ -73,7 +73,9 @@ When configured, `prepare` requires a successful current receipt bound to
 commit, protocol, configuration, fixture and recorded environment, with intact
 logs. Changed candidates need fresh checks. This does not bind mutable external
 dependencies or establish scientific validity. Failed checks and their logs
-remain in the immutable record ledger. No project preflight config means no
+remain in the immutable record ledger. A caught interruption records completed
+checks and blocks reuse of an older passed receipt; the interrupted check's exit
+status and output may be unavailable. No project preflight config means no
 new project-check gate for existing experiments.
 
 Use an existing Git repository root. Initialize with `init --project PATH`, then establish the explicit inherited-material entry below before experimental edits or launches. `init` reports entry status without silently declaring absence or resolving pending units. Ensure `.research/` is ignored before preparation; the runner reports this requirement and does not change `.gitignore`. Commit the intended source and any ignore-file change after reviewing the diff. `prepare` requires a clean checkout and rejects uncommitted or untracked source changes.

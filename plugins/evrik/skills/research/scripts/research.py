@@ -3054,6 +3054,7 @@ def record_action(args: argparse.Namespace) -> dict:
 
 
 def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
+    interrupted = False
     result = {"git_compatible": False, "ready": False, "checks": [], "environment": environment(),
               "readiness_scope": "runner_prerequisites_only", "scientific_acceptance": "not_automatically_assessed",
               "non_git_support": {"evidence": True, "immutable_records": True, "experiment_runner": False}}
@@ -3085,6 +3086,8 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
         if fixture:
             result["fixture"] = result_evidence(fixture, protocol["metric"]["name"])
         names = set()
+        if config["checks"]:
+            result["readiness_scope"] = "runner_prerequisites_and_declared_project_checks"
         for check in config["checks"]:
             exact_keys(check, {"name", "command", "timeout_seconds"}, "preflight check")
             if (not isinstance(check["name"], str) or not check["name"].strip() or check["name"] in names
@@ -3105,6 +3108,10 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
                 status = "passed" if code == 0 else "failed"
             except subprocess.TimeoutExpired as exc:
                 output, code, status = (exc.stdout or b"") + (exc.stderr or b""), None, "timeout"
+            except KeyboardInterrupt:
+                result["checks"].append({"name": check["name"], "status": "interrupted", "exit_code": None,
+                                         "elapsed_seconds": time.monotonic() - started})
+                raise
             folder = safe_path(storage, "preflight-logs")
             folder.mkdir(exist_ok=True)
             path = safe_path(folder, uuid.uuid4().hex + ".log")
@@ -3118,8 +3125,6 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
                            and all(check["status"] == "passed" for check in result["checks"]))
         result["project_checks"] = ("not_configured" if not result["checks"] else "not_run" if not run_checks
                                     else "passed" if all(check["status"] == "passed" for check in result["checks"]) else "failed")
-        if result["checks"]:
-            result["readiness_scope"] = "runner_prerequisites_and_declared_project_checks"
         if run_checks:
             # Bind to the candidate before AND after trusted checks, which may mutate files.
             if (binding["commit"] != git(project, "rev-parse", "HEAD").decode().strip()
@@ -3128,12 +3133,17 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
                     or binding["fixture"] != (file_digest(fixture) if fixture else None)
                     or git(project, "status", "--porcelain=v1", "--untracked-files=normal")):
                 result.update(ready=False, issue="Project changed during preflight")
+    except KeyboardInterrupt:
+        interrupted = True
+        result.update(ready=False, project_checks="interrupted", issue="Preflight interrupted; execution may be incomplete")
     except (ResearchError, OSError, ValueError, OverflowError) as exc:
         result.update(ready=False, issue=str(exc))
     if run_checks:
         receipt = record_append(storage, {"kind": "preflight", "key": "preflight",
                                           "invocation_id": uuid.uuid4().hex, "result": result})
         atomic_json(safe_path(storage, "preflight-latest.json"), {"record_id": receipt["id"]})
+    if interrupted:
+        raise KeyboardInterrupt
     return result
 
 

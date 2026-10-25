@@ -325,6 +325,51 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(r.check_preflight(self.project, self.storage), r.record_entries(self.storage)[-1]["id"])
         self.assertEqual(next(entry for entry in r.record_entries(self.storage) if entry["id"] == failed["id"]), failed)
 
+    def test_interrupted_preflight_preserves_partial_failure_and_blocks_prepare(self):
+        def git(*args):
+            completed = subprocess.run(["git", "-C", str(self.project), *args], capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+        git("init", "-q")
+        (self.project / ".gitignore").write_text(".research/\n", encoding="utf-8")
+        git("add", ".")
+        git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
+        self.storage.mkdir()
+        r.initialize(self.project, self.storage)
+        control = self.storage / "check-exit"
+        control.write_text("0", encoding="utf-8")
+        config = {"checks": [
+            {"name": "first", "command": ["{python}", "-c",
+             "from pathlib import Path; print('first'); raise SystemExit(int(Path('.research/check-exit').read_text()))"],
+             "timeout_seconds": 5},
+            {"name": "second", "command": ["{python}", "-c", "pass"], "timeout_seconds": 5}],
+            "required_runs": 1, "result_fixture": None}
+        r.atomic_json(self.storage / "preflight.json", config)
+        self.assertTrue(r.preflight(self.project, self.storage, True)["ready"])
+        original = r.record_entries(self.storage)[-1]
+        run = subprocess.run
+
+        def interrupt_second(command, **kwargs):
+            if command == [sys.executable, "-c", "pass"]:
+                raise KeyboardInterrupt
+            return run(command, **kwargs)
+
+        control.write_text("1", encoding="utf-8")
+        with patch.object(r.subprocess, "run", side_effect=interrupt_second):
+            with self.assertRaises(KeyboardInterrupt):
+                r.preflight(self.project, self.storage, True)
+        entry = r.record_entries(self.storage)[-1]
+        self.assertFalse(entry["result"]["ready"])
+        self.assertEqual(entry["result"]["readiness_scope"], "runner_prerequisites_and_declared_project_checks")
+        first, second = entry["result"]["checks"]
+        self.assertEqual((first["status"], first["exit_code"]), ("failed", 1))
+        self.assertEqual((self.project / first["log"]).read_bytes().strip(), b"first")
+        self.assertEqual((second["name"], second["status"], second["exit_code"]), ("second", "interrupted", None))
+        self.assertNotIn("log", second)
+        self.assertEqual(r.read_json(self.storage / "preflight-latest.json")["record_id"], entry["id"])
+        with self.assertRaisesRegex(r.ResearchError, "preflight is missing, failed or stale"):
+            r.prepare(self.project, self.storage, argparse.Namespace(label="blocked", hypothesis="", replicate=False))
+        self.assertEqual(r.record_entries(self.storage)[0], original)
+
     def test_preflight_real_import_schema_budget_and_stale_candidate(self):
         def git(*args):
             completed = subprocess.run(["git", "-C", str(self.project), *args], capture_output=True, text=True)
