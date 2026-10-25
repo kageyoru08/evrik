@@ -269,6 +269,28 @@ class StreamEvidenceTests(unittest.TestCase):
 class SnapshotEvidenceTests(StreamEvidenceTests):
     transport = "stream-v2"
 
+    def test_unreadable_receipt_directory_cannot_hide_a_pending_web_attempt(self):
+        activation = self.action("activate", public_web=True, record="report.md")
+        self.finish(activation["resume_command"])
+        self.calls += 1
+        request = {"search_query": [{"q": "synthetic public reference"}]}
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
+        attempt, = self.directory.glob("web-*-pre.json")
+        original = attempt.read_bytes()
+        self.assertFalse(self.action("check")["web"]["complete"])
+        scandir = os.scandir
+
+        def fail_scan(path):
+            if Path(path) == self.directory:
+                raise PermissionError("Injected receipt directory listing failure")
+            return scandir(path)
+
+        with mock.patch.object(os, "scandir", side_effect=fail_scan):
+            self.assertFalse(self.action("check")["ready_to_close"])
+            with self.assertRaises(r.ResearchError):
+                self.action("close")
+        self.assertEqual(attempt.read_bytes(), original)
+
     def test_unreadable_diagnostics_remain_optional_and_create_no_proof(self):
         activation = self.action("activate")
         self.finish(activation["resume_command"])

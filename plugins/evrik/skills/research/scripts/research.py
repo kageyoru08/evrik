@@ -1646,7 +1646,7 @@ def evidence_dependencies(project: Path, storage: Path, experiment: bool) -> dic
 
 def evidence_captures(project: Path, directory: Path, activation: dict) -> tuple[dict, list]:
     catalog, calls, complete, recoveries = [], {}, True, []
-    for path in sorted(directory.glob(f"web-{activation['id']}-*.json")):
+    for path in sorted(path for path in directory.iterdir() if path.match(f"web-{activation['id']}-*.json")):
         envelope = evidence_envelope(safe_path(directory, path.name))
         record = envelope["value"]
         reference = {"path": str(path.relative_to(project)), "sha256": file_digest(path)}
@@ -2059,7 +2059,7 @@ def evidence_stream_reuse(directory: Path, activation: dict, receipt_id: str, bu
     units = {unit["name"]: unit["sha256"] for unit in bundle["units"]}
     needed = {digest(part): index for index, part in enumerate(bundle["parts"]) if part["unit"] != "manifest"}
     reused = {}
-    for path in sorted(directory.glob("readback-*.json")):
+    for path in sorted(path for path in directory.iterdir() if path.match("readback-*.json")):
         old_id = path.stem[9:]
         if old_id == receipt_id:
             continue
@@ -2106,8 +2106,8 @@ def evidence_stream_matches(directory: Path, activation: dict, receipt_id: str, 
 def evidence_pending_pages(directory: Path, receipt_id: str, bundle: dict) -> list[int]:
     """Untrusted scheduling hints only; completion and close validate every proof."""
     prefix = f"page-matched-readback-{receipt_id}-"
-    present = {int(path.stem[len(prefix):]) for path in directory.glob(prefix + "*.json")
-               if re.fullmatch(r"0|[1-9][0-9]*", path.stem[len(prefix):])}
+    present = {int(path.stem[len(prefix):]) for path in directory.iterdir()
+               if path.match(prefix + "*.json") and re.fullmatch(r"0|[1-9][0-9]*", path.stem[len(prefix):])}
     reuse = safe_path(directory, f"reuse-{receipt_id}.json")
     if path_exists(reuse):
         present.update(int(index) for index in evidence_read(reuse)["pages"])

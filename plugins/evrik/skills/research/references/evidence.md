@@ -20,6 +20,7 @@ it. Hash verification only establishes identity. It cannot create native proof,
 prove source access, discharge a scientific obligation, or grant new attempts.
 Metadata access failures remain errors; they cannot stand for missing evidence,
 an empty record history, or an absent preflight requirement.
+An unreadable receipt directory cannot count as an empty successful capture.
 
 Declare the actual current deliverables and necessary new evidence for native
 review. An immutable historical source already reviewed for the same use can
