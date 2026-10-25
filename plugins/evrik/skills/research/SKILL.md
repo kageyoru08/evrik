@@ -67,6 +67,18 @@ routine choices; request user input only for a missing fact or decision with
 material consequences for scope, cost, authorization or irreversible effects.
 Actual host/native approval requirements remain authoritative.
 
+A HOLD must name the blocked action or claim, missing evidence, and the condition
+or authorized next action that could unblock it. Apply it to proven direct and
+transitive dependencies, while continuing authorized independent work. Keep
+scientific, native-delivery and administrative gates distinct. A reader failure
+grants no MATCH and alone establishes neither global route unavailability nor
+a program-wide stop; classify the actual failure before deciding what depends on it.
+
+Wait only for a concrete dependency and trigger, including an internal owner or
+reviewer actually working, after assessing relevant independent options. Re-reading
+one's own unchanged checkpoint or creating another closure is not progress or a
+new waiting dependency.
+
 ## Experiment path
 
 Read [references/experiments.md](references/experiments.md) before preparing,
@@ -254,6 +266,10 @@ do not substitute for saved-content review. Relevant passages suffice; no
 particular command or every-byte reread is required.
 
 Correct discrepancies and read back the affected saved content after changes.
+Review whether a blocking requirement and its dependencies are relevant and
+proportionate, while preserving valid project contracts. Any contract revision
+must be explicit, prospective and reviewed; post-hoc analyses remain exploratory
+and cannot change an earlier attempt's acceptance, verdict or budget breach.
 For a historical record, append the correction and its evidence while retaining
 the earlier factual entry. Preserve original evidence. Reconcile requested work
 against performed actions, not merely the existence of output files.
@@ -280,7 +296,11 @@ Otherwise identify the unmet requirement and concrete blocker without claiming
 completion. Negative scientific results and truthful incomplete outcomes are
 valid reports, not substitutes for unmet task requirements.
 
-Stop according to the agreed question, budget, and acceptance criteria.
+Stop the bounded stage or attempt at its agreed question, budget and acceptance
+limits. If the standing mandate remains active, evaluate the next authorized
+work instead of treating that stop as a program pause. Exhausted attempts stay
+spent; renaming a run or campaign does not refill them. A user's research pause
+overrides continuation.
 
 ## Tools, ownership, and authorization
 
