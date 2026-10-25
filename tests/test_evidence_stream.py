@@ -273,6 +273,31 @@ class StreamEvidenceTests(unittest.TestCase):
                 self.assertEqual((pre.read_bytes(), post.read_bytes()), (preserved, original_post))
         self.assertEqual(self.action("close", incomplete=True, reason="Preserve inconsistent saved receipts")["status"], "closed")
 
+    def test_web_receipt_call_collision_cannot_hide_a_pending_attempt(self):
+        self.action("activate", public_web=True, record="report.md")
+        request = {"search_query": [{"q": "synthetic public reference"}]}
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun", tool_use_id="completed"), {})
+        completed_pre, = self.directory.glob("web-*-pre.json")
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun", tool_use_id="pending"), {})
+        pending, = (path for path in self.directory.glob("web-*-pre.json") if path != completed_pre)
+        self.assertEqual(self.hook("PostToolUse", request, "Synthetic public text",
+                                   name="webrun", tool_use_id="completed"), {})
+        state = r.evidence_session(self.project, self.directory, self.session)["activations"][-1]
+        before, captures = r.evidence_captures(self.project, self.directory, state)
+        self.assertFalse(before["complete"])
+        self.assertEqual(len(captures), 1)
+        changed = r.evidence_read(pending)
+        changed["call"] = r.evidence_read(completed_pre)["call"]
+        r.evidence_write(pending, changed)  # One saved binding fault; the outer envelope is valid.
+        preserved = {path: path.read_bytes() for path in self.directory.glob("web-*.json")}
+        with self.assertRaisesRegex(r.ResearchError, "capture receipt identity"):
+            r.evidence_captures(self.project, self.directory, state)
+        self.assertFalse(self.action("check")["ready_to_close"])
+        with self.assertRaises(r.ResearchError):
+            self.action("close")
+        self.assertEqual(self.action("close", incomplete=True, reason="Preserve invalid call binding")["status"], "closed")
+        self.assertEqual({path: path.read_bytes() for path in preserved}, preserved)
+
     def test_web_post_binding_failure_retains_pending_attempt_and_prevents_close(self):
         self.action("activate", public_web=True, record="report.md")
         request = {"search_query": [{"q": "synthetic public reference"}]}

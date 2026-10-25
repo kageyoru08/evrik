@@ -21,8 +21,9 @@ prove source access, discharge a scientific obligation, or grant new attempts.
 Metadata access failures remain errors; they cannot stand for missing evidence,
 an empty record history, or an absent preflight requirement.
 An unreadable receipt directory cannot count as an empty successful capture.
-Conflicting request bindings in saved web Pre/Post receipts are integrity errors;
-they cannot disappear from the source obligations as an empty capture catalog.
+Conflicting request bindings or call/phase identities that disagree with saved
+web Pre/Post receipt filenames are integrity errors; they cannot disappear from
+the source obligations or overwrite another attempt in the capture catalog.
 
 Declare the actual current deliverables and necessary new evidence for native
 review. An immutable historical source already reviewed for the same use can
