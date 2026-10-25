@@ -943,7 +943,7 @@ def result_evidence(path: Path, primary_metric: str) -> dict:
         raw = path.read_bytes()
         result = json.loads(raw.decode("utf-8"), parse_constant=reject_constant,
                             object_pairs_hook=unique_json_object)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         raise ResearchError(f"Cannot read JSON at {path}: {exc}") from exc
     if not isinstance(result, dict) or not isinstance(result.get("metrics"), dict):
         raise ResearchError("Result must contain a metrics object")
