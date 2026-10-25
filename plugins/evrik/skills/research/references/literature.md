@@ -161,8 +161,12 @@ native hook capture. The metadata schema is:
 stay null. `expected` may compare `resolved_url`, `title` and `version`; it is
 optional in substance (`{}`), but its key is required. The importer reports
 consistent, mismatching or unreviewed fields and preserves an immutable byte
-copy. It cannot verify caller-supplied metadata against the external source or
-prove scientific support. Inspect redirects, returned title and version before
+copy. `redirect_observed` is null when either URL is unknown; with both URLs
+supplied, it is false for equal URLs and true for different URLs. This compares
+caller-supplied identities and does not verify an HTTP redirect. Existing saved
+records retain their original values. The importer cannot verify caller-supplied
+metadata against the external source or prove scientific support. Inspect
+redirects, returned title and version before
 making that judgment. Retain the actual retrieval date, evidence family,
 queries and passages in the saved response/working record. Do not repeat a
 completed retrieval to manufacture a native receipt. Declare the returned

@@ -2971,7 +2971,8 @@ def source_metadata(value: dict) -> dict:
               "consistent" if expected[key] == value[key] else "mismatch"
               for key in ("resolved_url", "title", "version")}
     return {**value, "identity_checks": checks, "identity_verified": False, "semantic_support": "unreviewed",
-            "redirect_observed": value["requested_url"] != value["resolved_url"],
+            "redirect_observed": (None if value["requested_url"] is None or value["resolved_url"] is None
+                                  else value["requested_url"] != value["resolved_url"]),
             "provenance": "caller-supplied metadata and imported ordinary tool output"}
 
 

@@ -73,6 +73,30 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(source["semantic_support"], "unreviewed")
         self.assertFalse(source["identity_verified"])
 
+    def test_source_import_keeps_unknown_redirect_identity_explicit(self):
+        first, second = "https://example.org/requested", "https://example.org/resolved"
+        cases = ((first, None, None), (None, second, None), (None, None, None),
+                 (first, first, False), (first, second, True))
+        for requested, resolved, expected in cases:
+            with self.subTest(requested=requested, resolved=resolved):
+                metadata = {"provider": "manual", "call_id": None, "requested_url": requested,
+                            "resolved_url": resolved, "title": None, "version": None,
+                            "access": "excerpt", "expected": {}}
+                (self.project / "source.json").write_text(json.dumps(metadata), encoding="utf-8")
+                completed = subprocess.run(
+                    [sys.executable, "-X", "utf8", "-B", str(RUNNER), "record", "source",
+                     "--project", str(self.project), "--key", "source-identity",
+                     "--input", "review.md", "--metadata", "source.json"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=10)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                receipt = json.loads(completed.stdout)
+                self.assertFalse(receipt["native_capture"])
+                entry = next(item for item in r.record_entries(self.storage) if item["id"] == receipt["id"])
+                source = entry["source"]
+                self.assertIs(source["redirect_observed"], expected)
+                self.assertEqual(source["semantic_support"], "unreviewed")
+                self.assertFalse(source["identity_verified"])
+
     def test_non_git_compatibility_is_reported_before_setup(self):
         completed = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "preflight", "--project", str(self.project)],
                                    capture_output=True, text=True, encoding="utf-8", timeout=10)
