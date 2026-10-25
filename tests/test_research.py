@@ -744,7 +744,7 @@ class RunnerTests(unittest.TestCase):
         adapter = (
             "import os,runpy,sys\nfrom pathlib import Path\n"
             "runner,target,fault=sys.argv[1:4]\nsys.argv=[runner,*sys.argv[4:]]\n"
-            "code=runpy.run_path(runner,run_name='runner_under_test')\ntarget=Path(target)\n"
+            "code=runpy.run_path(runner,run_name='runner_under_test')\ntarget=Path(target).resolve()\n"
             "original_stat,original_open=os.stat,Path.open\nhits=0\n"
             "def failed_stat(path,*args,**kwargs):\n"
             " global hits\n result=original_stat(path,*args,**kwargs)\n"
@@ -786,7 +786,8 @@ class RunnerTests(unittest.TestCase):
 
     def test_preflight_log_failure_preserves_observed_check_exit(self):
         from test_evidence_stream import r
-        storage = self.project / ".research"
+        project = self.project.resolve()
+        storage = project / ".research"
         r.atomic_json(storage / "preflight.json", {"checks": [{"name": "failing check", "command": [
             "{python}", "-c", "print('preflight failed with seven'); raise SystemExit(7)"],
             "timeout_seconds": 5}], "required_runs": 1, "result_fixture": None})
@@ -798,7 +799,7 @@ class RunnerTests(unittest.TestCase):
             return original_digest(path)
 
         with mock.patch.object(r, "file_digest", side_effect=fail_log_digest):
-            checked = r.preflight(self.project, storage, True)
+            checked = r.preflight(project, storage, True)
         self.assertFalse(checked["ready"])
         self.assertIn("Injected preflight log", checked["issue"])
         self.assertEqual(len(checked["checks"]), 1)
