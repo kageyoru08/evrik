@@ -1,5 +1,6 @@
 """Observable record, recovery and project preflight behavior; no model calls."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from test_evidence_stream import r, RUNNER
 
@@ -41,6 +43,66 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotEqual(new["id"], original["id"])
         self.assertEqual(saved.read_bytes(), b"Review from saved evidence\r\n")
         self.assertEqual(self.status(first["snapshot"])["changes"]["administration"]["record_count"], 2)
+
+    def test_interrupted_record_copy_recovers_without_overwriting_existing_objects(self):
+        raw = b"Large immutable record\n" * 4096
+        self.file.write_bytes(raw)
+        identity = hashlib.sha256(raw).hexdigest()
+        target = self.storage / "records/objects" / identity
+        real_open = Path.open
+        opens = 0
+
+        class InterruptedReader:
+            def __init__(self, stream):
+                self.stream, self.reads = stream, 0
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.stream.close()
+            def read(self, size=-1):
+                self.reads += 1
+                if self.reads > 1:
+                    raise OSError("source read interrupted")
+                return self.stream.read(size)
+
+        def opened(path, mode="r", *args, **kwargs):
+            nonlocal opens
+            stream = real_open(path, mode, *args, **kwargs)
+            if path == self.file and mode == "rb":
+                opens += 1
+                if opens == 2:
+                    return InterruptedReader(stream)
+            return stream
+
+        with patch.object(Path, "open", opened):
+            with self.assertRaisesRegex(OSError, "source read interrupted"):
+                self.record("save", input="review.md")
+        self.assertFalse(target.exists())
+        self.assertFalse((self.storage / "records/ledger.json").exists())
+        saved = self.record("save", input="review.md")
+        self.assertEqual(target.read_bytes(), raw)
+        self.assertFalse(os.path.samestat(self.file.stat(), target.stat()))
+        original_entry = (self.project / saved["record"]).read_bytes()
+        self.assertTrue(self.record("save", input="review.md")["deduplicated"])
+        self.assertEqual((self.project / saved["record"]).read_bytes(), original_entry)
+        target.write_bytes(b"pre-existing corruption")
+        with self.assertRaises(r.ResearchError):
+            self.record("save", input="review.md")
+        self.assertEqual(target.read_bytes(), b"pre-existing corruption")
+
+    def test_record_publication_collision_preserves_existing_object(self):
+        target = self.storage / "records/objects" / hashlib.sha256(self.file.read_bytes()).hexdigest()
+        real_link = os.link
+
+        def collision(source, destination):
+            Path(destination).write_bytes(b"existing collision")
+            return real_link(source, destination)
+
+        with patch.object(r.os, "link", collision):
+            with self.assertRaises(r.ResearchError):
+                self.record("save", input="review.md")
+        self.assertEqual(target.read_bytes(), b"existing collision")
+        self.assertFalse((self.storage / "records/ledger.json").exists())
 
     def test_frozen_review_failure_recovery_withdrawal_and_staleness(self):
         packet = self.record("freeze", artifact=["review.md"], reviewer=["root", "peer"])["id"]

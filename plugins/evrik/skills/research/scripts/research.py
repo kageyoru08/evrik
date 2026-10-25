@@ -2903,14 +2903,29 @@ def record_assets(project: Path, storage: Path, names: list[str]) -> list[dict]:
             raise ResearchError(f"Record input must be a regular file: {name}")
         identity, size = file_digest(source), source.stat().st_size
         destination = safe_path(folder, identity)
-        try:
-            with destination.open("xb") as output, source.open("rb") as input_file:
+        if not destination.exists():
+            # Failed staging copies remain diagnostic artifacts, never final objects.
+            temporary = destination.with_name(f".{identity}.{uuid.uuid4().hex}.tmp")
+            with temporary.open("xb") as output, source.open("rb") as input_file:
                 while block := input_file.read(65536):
                     output.write(block)
-        except FileExistsError:
-            pass
+                output.flush()
+                os.fsync(output.fileno())
+            if file_digest(temporary) != identity or temporary.stat().st_size != size or file_digest(source) != identity:
+                raise ResearchError("Record input changed during capture; staging bytes preserved for diagnosis")
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                pass
+            temporary.unlink()
         if file_digest(destination) != identity or destination.stat().st_size != size or file_digest(source) != identity:
             raise ResearchError("Record input changed during capture; original bytes preserved for diagnosis")
+        if os.name != "nt":
+            descriptor = os.open(folder, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
         assets.append({"path": name, "sha256": identity, "bytes": size,
                        "saved": destination.relative_to(project).as_posix(), "storage": "byte_copy"})
     return assets

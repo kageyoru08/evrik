@@ -310,7 +310,14 @@ status --project ROOT --since STATUS_HASH
 ```
 
 Records preserve exclusively created copies and hashes of the actual bytes,
-including LF/CRLF differences. They are copies, not links. Repeating the same
+including LF/CRLF differences. Input bytes are copied into a separate staging
+file, flushed and validated before exclusive publication. This uses a hard link
+from staging to the final name on the same filesystem, then removes staging;
+the saved object does not share the input file's inode. Filesystems without
+hard-link support report an error. Failed staging files may remain for diagnosis
+but carry no record credit and do not block a later save of unchanged input.
+Existing final objects, including historical corruption, are never overwritten.
+Repeating the same
 event is idempotent. A withdrawal appends a record; it never edits the vote.
 A frozen packet declares required reviewer identities. Failed or missing
 invitations remain unresolved; recovering a review uses those saved artifacts,
