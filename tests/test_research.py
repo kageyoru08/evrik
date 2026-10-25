@@ -1008,6 +1008,15 @@ class RunnerTests(unittest.TestCase):
 
 
 class DemoTests(unittest.TestCase):
+    def test_git_output_preserves_unicode_with_legacy_default_encoding(self):
+        with tempfile.TemporaryDirectory(prefix="evrik-demo-git-") as temporary:
+            project = Path(temporary) / "名"
+            project.mkdir()
+            with mock.patch("subprocess._text_encoding", return_value="cp1252"):
+                output = git(project, "init", "-b", "main")
+            self.assertIn("名", output)
+            self.assertEqual(git(project, "rev-parse", "--is-inside-work-tree"), "true")
+
     def test_complete_demo_emits_a_traceable_report(self):
         with tempfile.TemporaryDirectory(prefix="evrik-demo-test-") as temporary:
             result = subprocess.run(

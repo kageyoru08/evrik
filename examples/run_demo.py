@@ -13,7 +13,7 @@ RUNNER = ROOT / "plugins/evrik/skills/research/scripts/research.py"
 
 
 def git(project: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(project), *args], check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(["git", "-C", str(project), *args], check=True, capture_output=True, text=True, encoding="utf-8").stdout.strip()
 
 
 def command(project: Path, operation: str, *args: str) -> dict:
