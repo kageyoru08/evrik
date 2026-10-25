@@ -1657,9 +1657,12 @@ def evidence_captures(project: Path, directory: Path, activation: dict) -> tuple
         envelope = evidence_envelope(safe_path(directory, path.name))
         record = envelope["value"]
         call, phase = record.get("call"), record.get("phase")
+        suffix = {"PreToolUse": "pre", "PostToolUse": "post"}.get(phase) if isinstance(phase, str) else None
+        if (phase == "conflict" and record.get("status") == "incomplete"
+                and isinstance(record.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", record["sha256"])):
+            suffix = "conflict-" + record["sha256"]
         if (not isinstance(call, str) or not re.fullmatch(r"[0-9a-f]{64}", call)
-                or phase not in ("PreToolUse", "PostToolUse")
-                or path.name != f"web-{activation['id']}-{call}-{'pre' if phase == 'PreToolUse' else 'post'}.json"):
+                or suffix is None or path.name != f"web-{activation['id']}-{call}-{suffix}.json"):
             raise ResearchError("Public web capture receipt identity mismatch")
         reference = {"path": str(path.relative_to(project)), "sha256": file_digest(path)}
         catalog.append(reference)

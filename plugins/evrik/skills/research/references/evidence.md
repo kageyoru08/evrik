@@ -24,6 +24,7 @@ An unreadable receipt directory cannot count as an empty successful capture.
 Conflicting request bindings or call/phase identities that disagree with saved
 web Pre/Post receipt filenames are integrity errors; they cannot disappear from
 the source obligations or overwrite another attempt in the capture catalog.
+Valid conflict receipts remain readable as incomplete evidence.
 
 Declare the actual current deliverables and necessary new evidence for native
 review. An immutable historical source already reviewed for the same use can
