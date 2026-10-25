@@ -2986,10 +2986,11 @@ def source_metadata(value: dict) -> dict:
             raise ResearchError(f"Invalid source {key}")
     for key in ("requested_url", "resolved_url"):
         if value[key] is not None:
-            if not isinstance(value[key], str):
-                raise ResearchError("Source URL identity must be a string or null")
+            if not isinstance(value[key], str) or re.search(r"[\s\x00-\x1f\x7f]", value[key]):
+                raise ResearchError("Source URL identity must be a string without whitespace or controls, or null")
             parsed = urlsplit(value[key])
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                    or parsed.username is not None or parsed.password is not None):
                 raise ResearchError("Source URLs must be public HTTP(S) identities without credentials")
     expected = value["expected"]
     if not isinstance(expected, dict) or set(expected) - {"resolved_url", "title", "version"}:

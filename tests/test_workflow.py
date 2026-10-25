@@ -184,6 +184,38 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(source["semantic_support"], "unreviewed")
                 self.assertFalse(source["identity_verified"])
 
+    def test_source_import_rejects_disguised_urls_and_preserves_valid_spelling(self):
+        cases = (("requested_url", "https://@example.org/p", 2),
+                 ("resolved_url", "https://@example.org/p", 2),
+                 ("requested_url", "\x01https://example.org/p", 2),
+                 ("resolved_url", "https://exam\tple.org/p", 2),
+                 ("requested_url", "HTTPS://example.org/?tag=@public", 0),
+                 ("resolved_url", "https://example.org/a%20b", 0))
+        for field, url, expected in cases:
+            with self.subTest(field=field, url=url):
+                metadata = {"provider": "manual", "call_id": None, "requested_url": None,
+                            "resolved_url": None, "title": None, "version": None,
+                            "access": "excerpt", "expected": {}}
+                metadata[field] = url
+                (self.project / "source.json").write_text(json.dumps(metadata), encoding="utf-8")
+                before = r.record_entries(self.storage)
+                completed = subprocess.run(
+                    [sys.executable, "-X", "utf8", "-B", str(RUNNER), "record", "source",
+                     "--project", str(self.project), "--key", "source-url",
+                     "--input", "review.md", "--metadata", "source.json"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=10)
+                self.assertEqual(completed.returncode, expected, completed.stderr or completed.stdout)
+                if expected:
+                    self.assertIn("error", json.loads(completed.stderr))
+                    self.assertEqual(r.record_entries(self.storage), before)
+                else:
+                    receipt = json.loads(completed.stdout)
+                    self.assertFalse(receipt["native_capture"])
+                    source = r.record_entries(self.storage)[-1]["source"]
+                    self.assertEqual(source[field], url)
+                    self.assertFalse(source["identity_verified"])
+                    self.assertEqual(source["semantic_support"], "unreviewed")
+
     def test_non_git_compatibility_is_reported_before_setup(self):
         completed = subprocess.run([sys.executable, "-X", "utf8", "-B", str(RUNNER), "preflight", "--project", str(self.project)],
                                    capture_output=True, text=True, encoding="utf-8", timeout=10)
