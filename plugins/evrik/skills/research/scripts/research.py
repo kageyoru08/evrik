@@ -953,6 +953,10 @@ def result_evidence(path: Path, primary_metric: str) -> dict:
     for name, value in metrics.items():
         if not isinstance(name, str) or not name:
             raise ResearchError("Metric names must be nonempty strings")
+        try:
+            name.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ResearchError("Metric names must be valid UTF-8 strings") from exc
         finite_number(value, f"metrics.{name}")
     return {"status": "valid", "result_sha256": hashlib.sha256(raw).hexdigest(), "metrics": metrics}
 
@@ -2588,9 +2592,16 @@ def evidence_public_request(value: Any) -> bool:
             for key, field in item.items():
                 if key in {"q", "ref_id", "pattern"} and (not isinstance(field, str) or not field.strip() or "\0" in field):
                     return False
-                if key == "ref_id" and not (re.match(r"https?://[^/@\s]+(?:/|$)", field)
-                                             or re.fullmatch(r"turn[0-9]+[A-Za-z][A-Za-z0-9_-]*[0-9]", field)):
-                    return False
+                if key == "ref_id" and not re.fullmatch(r"turn[0-9]+[A-Za-z][A-Za-z0-9_-]*[0-9]", field):
+                    if re.search(r"[\s\x00-\x1f\x7f]", field):
+                        return False
+                    try:
+                        parsed = urlsplit(field)
+                    except ValueError:
+                        return False
+                    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                            or parsed.username is not None or parsed.password is not None):
+                        return False
                 if key in {"recency", "lineno"} and (type(field) is not int or field < 0):
                     return False
                 if key == "domains" and (not isinstance(field, list) or not field

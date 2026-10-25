@@ -698,6 +698,24 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(result["evidence"]["status"], "invalid")
                 self.invoke("compare", "--baseline", baseline, "--candidate", candidate, expected=2)
 
+    def test_metric_names_preserve_completion_and_require_valid_utf8(self):
+        for name, expected in (("\ud800", 1), ("误差😀", 0)):
+            with self.subTest(metric_name=ascii(name)):
+                payload = json.dumps({"metrics": {"mse": 1, name: 2}})
+                evaluator = ("import sys\nfrom pathlib import Path\nprint('fixed writer completed')\n"
+                             f"Path(sys.argv[2]).write_text({payload!r}, encoding='utf-8')\n")
+                self.commit_file("evaluate.py", evaluator)
+                run_id = self.prepare("metric-name")
+                result = self.invoke("run", "--id", run_id, expected=expected)
+                self.assertEqual((result["status"], result["exit_code"]), ("completed", 0))
+                self.assertEqual(result["evidence"]["status"], "invalid" if expected else "valid")
+                directory = self.run_path(run_id)
+                self.assertEqual((directory / "result.json").read_bytes(), payload.encode("utf-8"))
+                self.assertIn("fixed writer completed", (directory / "run.log").read_text(encoding="utf-8"))
+                inspected = self.invoke("inspect", "--id", run_id, expected=0)
+                self.assertTrue(inspected["launch_claimed"])
+                self.assertFalse(inspected["unresolved"])
+
     def test_concurrent_run_claims_enforce_single_launch_and_project_budget(self):
         for distinct in (False, True):
             with self.subTest(distinct_run_ids=distinct):
@@ -1253,6 +1271,10 @@ class EvidenceTests(unittest.TestCase):
         before = self.inventory()
         for index, reference in enumerate(("file:///C:/Users/example/source.md", "../private.md",
                                             "C:\\Users\\example\\source.md",
+                                            "https://?query-only", "https:///missing-host", "https://[broken",
+                                            "https://user:secret@example.org/source", "https://@example.org/source",
+                                            "https://exam\nple.org/source",
+                                            "\x01https://example.org/source",
                                             "turn1X" + "9" * 120000 + "Z")):
             refused = self.hook("PreToolUse", f"invalid-{index}", {"open": [{"ref_id": reference}]})
             self.assertEqual(refused["decision"], "block")
@@ -1260,7 +1282,9 @@ class EvidenceTests(unittest.TestCase):
             self.assertEqual(self.inventory(), before)
         # Synthetic hook envelopes exercise the real CLI, including a subtype
         # returned by the native H01 search; source IDs are never normalized.
-        request = {"open": [{"ref_id": "turn0academia21"}, {"ref_id": "turn9future_source3"}],
+        request = {"open": [{"ref_id": "turn0academia21"}, {"ref_id": "turn9future_source3"},
+                            {"ref_id": "HTTPS://example.org/source"},
+                            {"ref_id": "https://example.org?contact=editor@example.org"}],
                    "find": [{"ref_id": "turn0academia21", "pattern": "snapshot"}]}
         self.assertEqual(self.hook("PreToolUse", "valid", request), {})
         self.assertEqual(self.hook("PostToolUse", "valid", request, "Public source passage."), {})
