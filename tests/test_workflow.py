@@ -226,6 +226,24 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("missing primary metric", malformed["issue"])
         self.assertEqual(r.record_entries(self.storage)[-1]["result"], malformed)
 
+        config["result_fixture"] = None
+        config["checks"][0].update(command=["{python}", "-c", "pass"], timeout_seconds=10 ** 400)
+        path.write_text(json.dumps(config), encoding="utf-8")
+        overflow = r.preflight(self.project, self.storage, True)
+        self.assertFalse(overflow["ready"])
+        self.assertTrue(overflow["issue"])
+        entry = r.record_entries(self.storage)[-1]
+        self.assertEqual(entry["result"], overflow)
+        self.assertEqual(r.read_json(self.storage / "preflight-latest.json")["record_id"], entry["id"])
+
+        raw = json.dumps(config).replace(str(10 ** 400), "1e400")
+        path.write_text(raw, encoding="utf-8")
+        nonfinite = r.preflight(self.project, self.storage, True)
+        self.assertFalse(nonfinite["ready"])
+        self.assertTrue(nonfinite["issue"])
+        self.assertEqual(r.record_entries(self.storage)[-1]["result"], nonfinite)
+        self.assertEqual(path.read_text(encoding="utf-8"), raw)
+
 
 if __name__ == "__main__":
     unittest.main()

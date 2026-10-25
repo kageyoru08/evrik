@@ -3053,6 +3053,7 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
                    "config": file_digest(configuration), "fixture": file_digest(fixture) if fixture else None,
                    "environment": result["environment"]}
         result["binding"] = binding
+        canonical(config)  # Reject non-finite parsed numbers before embedding them in a failure receipt.
         result["configuration"] = config
         if fixture:
             result["fixture"] = result_evidence(fixture, protocol["metric"]["name"])
@@ -3100,7 +3101,7 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
                     or binding["fixture"] != (file_digest(fixture) if fixture else None)
                     or git(project, "status", "--porcelain=v1", "--untracked-files=normal")):
                 result.update(ready=False, issue="Project changed during preflight")
-    except (ResearchError, OSError, ValueError) as exc:
+    except (ResearchError, OSError, ValueError, OverflowError) as exc:
         result.update(ready=False, issue=str(exc))
     if run_checks:
         receipt = record_append(storage, {"kind": "preflight", "key": "preflight", "result": result})
