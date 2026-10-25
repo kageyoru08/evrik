@@ -745,7 +745,7 @@ class RunnerTests(unittest.TestCase):
             "import os,runpy,sys\nfrom pathlib import Path\n"
             "runner,target,fault=sys.argv[1:4]\nsys.argv=[runner,*sys.argv[4:]]\n"
             "code=runpy.run_path(runner,run_name='runner_under_test')\ntarget=Path(target).resolve()\n"
-            "original_stat,original_open=os.stat,Path.open\nhits=0\n"
+            "original_stat,original_open,original_fsync=os.stat,Path.open,os.fsync\nhits=0\n"
             "def failed_stat(path,*args,**kwargs):\n"
             " global hits\n result=original_stat(path,*args,**kwargs)\n"
             " if Path(path)==target:\n"
@@ -756,12 +756,27 @@ class RunnerTests(unittest.TestCase):
             " if path==target and mode=='rb':\n"
             "  hits+=1\n  raise PermissionError('Injected terminal log read failure')\n"
             " return original_open(path,mode,*args,**kwargs)\n"
-            "if fault=='metadata': os.stat=failed_stat\nelse: Path.open=failed_open\n"
+            "def failed_fsync(fd):\n"
+            " global hits\n opened=os.fstat(fd)\n"
+            " try: target_stat=original_stat(target)\n"
+            " except FileNotFoundError: return original_fsync(fd)\n"
+            " if (opened.st_dev,opened.st_ino)==(target_stat.st_dev,target_stat.st_ino):\n"
+            "  hits+=1\n"
+            "  if fault=='interrupt': raise KeyboardInterrupt('Injected terminal log interruption')\n"
+            "  raise OSError('Injected terminal log fsync failure')\n"
+            " return original_fsync(fd)\n"
+            "if fault=='metadata': os.stat=failed_stat\n"
+            "elif fault=='read': Path.open=failed_open\nelse: os.fsync=failed_fsync\n"
             "try: raise SystemExit(code['main']())\n"
             "finally: print('FAULT_HITS='+str(hits),file=sys.stderr)\n"
         )
-        for fault, filename in (("metadata", "result.json"), ("read", "run.log")):
-            with self.subTest(fault=fault):
+        cases = (("metadata", "result.json", 0), ("read", "run.log", 0),
+                 ("fsync", "run.log", 0), ("interrupt", "run.log", 0), ("fsync", "run.log", 7))
+        self.protocol(lambda value: value["budget"].update(max_runs=len(cases)))
+        for fault, filename, exit_code in cases:
+            with self.subTest(fault=fault, exit_code=exit_code):
+                if exit_code:
+                    self.protocol(lambda value: value.update(command=["{python}", "-c", "raise SystemExit(7)", "{result}"]))
                 run_id = self.prepare(fault, "--replicate")
                 directory = self.run_path(run_id)
                 result = subprocess.run([sys.executable, "-c", adapter, str(RUNNER),
@@ -769,20 +784,22 @@ class RunnerTests(unittest.TestCase):
                                          "--id", run_id], capture_output=True, text=True, encoding="utf-8", timeout=30)
                 stored = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
                 self.assertEqual((result.returncode, stored["status"], stored.get("exit_code")),
-                                 (1, "completed", 0), result.stderr or result.stdout)
+                                 (1, "failed" if exit_code else "completed", exit_code), result.stderr or result.stdout)
                 self.assertIn("FAULT_HITS=1", result.stderr)
                 self.assertEqual(json.loads(result.stdout), stored)
                 self.assertEqual(stored["evidence"]["status"], "invalid")
-                self.assertIn("Injected terminal", stored["evidence"]["reason"])
-                if fault == "read":
+                if not exit_code:
+                    self.assertIn("Injected terminal", stored["evidence"]["reason"])
+                if fault != "metadata":
                     self.assertIn("Injected terminal", stored["log_error"])
-                original = {name: (directory / name).read_bytes() for name in ("result.json", "run.log", "manifest.json")}
+                original = {name: (directory / name).read_bytes() for name in
+                            (("run.log", "manifest.json") if exit_code else ("result.json", "run.log", "manifest.json"))}
                 inspected = self.invoke("inspect", "--id", run_id, expected=0)
                 self.assertTrue(inspected["launch_claimed"])
-                self.assertFalse(inspected["unresolved"])
+                self.assertEqual(inspected["unresolved"], bool(exit_code))
                 self.invoke("run", "--id", run_id, expected=2)
                 self.assertEqual({name: (directory / name).read_bytes() for name in original}, original)
-        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 2)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], len(cases))
 
     def test_preflight_log_failure_preserves_observed_check_exit(self):
         from test_evidence_stream import r

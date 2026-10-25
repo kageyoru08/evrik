@@ -1044,15 +1044,16 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
                 manifest.update(status="interrupted", cleanup=stop_owned_process(process), exit_code=process.poll())
             log.flush()
             os.fsync(log.fileno())
-    except KeyboardInterrupt:
-        manifest.update(status="interrupted", exit_code=process.poll() if process else None)
-        if process is not None:
-            manifest["cleanup"] = stop_owned_process(process)
-    except (OSError, ValueError, OverflowError) as exc:
-        manifest.update(status="launch_failed" if process is None else "interrupted", error=str(exc))
-        if process is not None:
-            manifest["cleanup"] = stop_owned_process(process)
-        manifest["exit_code"] = process.poll() if process else None
+    except (KeyboardInterrupt, OSError, ValueError, OverflowError) as exc:
+        if manifest["status"] in {"completed", "failed", "timed_out", "interrupted"}:
+            # Log flush/fsync/close must not replace an observed process outcome.
+            manifest["log_error"] = str(exc) or type(exc).__name__
+        else:
+            interrupted = process is not None or isinstance(exc, KeyboardInterrupt)
+            manifest.update(status="interrupted" if interrupted else "launch_failed", error=str(exc))
+            if process is not None:
+                manifest["cleanup"] = stop_owned_process(process)
+            manifest["exit_code"] = process.poll() if process else None
     manifest["ended_at"] = utc_now()
     if manifest["status"] == "completed":
         try:
@@ -1068,9 +1069,9 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
             manifest["log_sha256"] = file_digest(log_path)
     except (ResearchError, OSError) as exc:
         # Evidence access failures must not erase an already observed process exit.
-        manifest["log_error"] = str(exc)
-        if manifest["evidence"]["status"] == "valid":
-            manifest["evidence"] = {"status": "invalid", "reason": "Cannot verify execution log: " + str(exc)}
+        manifest.setdefault("log_error", str(exc))
+    if "log_error" in manifest and manifest["evidence"]["status"] == "valid":
+        manifest["evidence"] = {"status": "invalid", "reason": "Cannot verify execution log: " + manifest["log_error"]}
     atomic_json(safe_path(storage, "runs", run_id, "manifest.json"), manifest)
     return manifest
 
