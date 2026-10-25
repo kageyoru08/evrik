@@ -44,6 +44,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(saved.read_bytes(), b"Review from saved evidence\r\n")
         self.assertEqual(self.status(first["snapshot"])["changes"]["administration"]["record_count"], 2)
 
+    def test_status_delta_rejects_misbound_snapshot_without_rewriting_it(self):
+        first = self.status()
+        self.record("save", input="review.md")
+        second = self.status()
+        previous = self.storage / "status" / (first["snapshot"] + ".json")
+        replacement = (self.storage / "status" / (second["snapshot"] + ".json")).read_bytes()
+        previous.write_bytes(replacement)
+        with self.assertRaisesRegex(r.ResearchError, "Status snapshot identity mismatch"):
+            self.status(first["snapshot"])
+        self.assertEqual(previous.read_bytes(), replacement)
+
     def test_interrupted_record_copy_recovers_without_overwriting_existing_objects(self):
         raw = b"Large immutable record\n" * 4096
         self.file.write_bytes(raw)
@@ -225,6 +236,66 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(status["ready"])
         self.assertTrue(status["non_git_support"]["immutable_records"])
         self.assertFalse((self.project / ".git").exists())
+
+    def test_preflight_rejects_stale_pointer_and_accepts_a_fresh_recovery(self):
+        def git(*args):
+            completed = subprocess.run(["git", "-C", str(self.project), *args], capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+        git("init", "-q")
+        (self.project / ".gitignore").write_text(".research/\n", encoding="utf-8")
+        git("add", ".")
+        git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
+        self.storage.mkdir()
+        r.initialize(self.project, self.storage)
+        control = self.storage / "check-exit"
+        control.write_text("0", encoding="utf-8")
+        config = {"checks": [{"name": "controlled exit", "command": ["{python}", "-c",
+                  "from pathlib import Path; raise SystemExit(int(Path('.research/check-exit').read_text()))"],
+                  "timeout_seconds": 5}], "required_runs": 1, "result_fixture": None}
+        path = self.storage / "preflight.json"
+        r.atomic_json(path, config)
+        self.assertTrue(r.preflight(self.project, self.storage, True)["ready"])
+        ordinary = self.record("save", input="review.md")
+        ordinary_path = self.project / ordinary["record"]
+        ordinary_bytes = ordinary_path.read_bytes()
+        original = r.check_preflight(self.project, self.storage)
+        ordinary_path.write_bytes((self.storage / "records/entries" / (original + ".json")).read_bytes())
+        with self.assertRaisesRegex(r.ResearchError, "Record identity mismatch"):
+            r.check_preflight(self.project, self.storage)
+        ordinary_path.write_bytes(ordinary_bytes)
+        self.assertEqual(r.check_preflight(self.project, self.storage), original)
+        publish = r.atomic_json
+
+        def interrupted_pointer(path, value):
+            if path.name == "preflight-latest.json":
+                raise OSError("pointer publication interrupted")
+            return publish(path, value)
+
+        control.write_text("1", encoding="utf-8")
+        with patch.object(r, "atomic_json", side_effect=interrupted_pointer):
+            with self.assertRaisesRegex(OSError, "pointer publication interrupted"):
+                r.preflight(self.project, self.storage, True)
+        self.assertEqual(r.read_json(self.storage / "preflight-latest.json")["record_id"], original)
+        failed = r.record_entries(self.storage)[-1]
+        self.assertFalse(failed["result"]["ready"])
+        self.assertEqual(failed["result"]["checks"][0]["exit_code"], 1)
+        with self.assertRaisesRegex(r.ResearchError, "preflight is missing, failed or stale"):
+            r.check_preflight(self.project, self.storage)
+
+        # A new successful fixture-only check may have the same result as an older one.
+        fixture = self.storage / "fixture.json"
+        valid = '{"metrics": {"mse": 1}}'
+        fixture.write_text(valid, encoding="utf-8")
+        config.update(checks=[], result_fixture=".research/fixture.json")
+        r.atomic_json(path, config)
+        self.assertTrue(r.preflight(self.project, self.storage, True)["ready"])
+        self.assertTrue(r.check_preflight(self.project, self.storage))
+        fixture.write_text('{"metrics": {"other": 1}}', encoding="utf-8")
+        self.assertFalse(r.preflight(self.project, self.storage, True)["ready"])
+        fixture.write_text(valid, encoding="utf-8")
+        self.assertTrue(r.preflight(self.project, self.storage, True)["ready"])
+        self.assertEqual(r.check_preflight(self.project, self.storage), r.record_entries(self.storage)[-1]["id"])
+        self.assertEqual(next(entry for entry in r.record_entries(self.storage) if entry["id"] == failed["id"]), failed)
 
     def test_preflight_real_import_schema_budget_and_stale_candidate(self):
         def git(*args):

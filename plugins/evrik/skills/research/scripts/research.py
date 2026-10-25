@@ -3123,7 +3123,8 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
     except (ResearchError, OSError, ValueError, OverflowError) as exc:
         result.update(ready=False, issue=str(exc))
     if run_checks:
-        receipt = record_append(storage, {"kind": "preflight", "key": "preflight", "result": result})
+        receipt = record_append(storage, {"kind": "preflight", "key": "preflight",
+                                          "invocation_id": uuid.uuid4().hex, "result": result})
         atomic_json(safe_path(storage, "preflight-latest.json"), {"record_id": receipt["id"]})
     return result
 
@@ -3147,7 +3148,20 @@ def check_preflight(project: Path, storage: Path) -> str | None:
     current = preflight(project, storage)
     latest = read_json(safe_path(storage, "preflight-latest.json"))
     prior = preflight_receipt(project, storage, latest["record_id"])
-    if (not prior["ready"] or current.get("binding") != prior.get("binding")
+    identities = read_json(safe_path(storage, "records", "ledger.json"))
+    if not isinstance(identities, list):
+        raise ResearchError("Invalid record ledger")
+    latest_id = None
+    for identity in reversed(identities):
+        if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{64}", identity):
+            raise ResearchError("Invalid record ledger identity")
+        entry = evidence_read(safe_path(storage, "records", "entries", identity + ".json"))
+        if digest(entry) != identity:
+            raise ResearchError("Record identity mismatch")
+        if entry.get("kind") == "preflight":
+            latest_id = identity
+            break
+    if (latest["record_id"] != latest_id or not prior["ready"] or current.get("binding") != prior.get("binding")
             or not current.get("budget_valid") or not current.get("clean_tree") or not current.get("storage_ignored")):
         raise ResearchError("Project preflight is missing, failed or stale; inspect preflight before prepare")
     return latest["record_id"]
@@ -3206,6 +3220,8 @@ def workflow_status(args: argparse.Namespace) -> dict:
         if not re.fullmatch(r"[0-9a-f]{64}", args.since):
             raise ResearchError("--since must identify a saved status snapshot")
         previous = evidence_read(safe_path(folder, args.since + ".json"))
+        if digest(previous) != args.since:
+            raise ResearchError("Status snapshot identity mismatch")
         return {"snapshot": identity, "changes": {key: value for key, value in result.items() if previous.get(key) != value}}
     return {"snapshot": identity, **result}
 
