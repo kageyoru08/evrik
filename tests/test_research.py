@@ -699,19 +699,29 @@ class RunnerTests(unittest.TestCase):
                 self.invoke("compare", "--baseline", baseline, "--candidate", candidate, expected=2)
 
     def test_nested_result_failure_preserves_completion_and_preflight_receipt(self):
-        payload = '{"metrics":{"mse":1},"details":' + '[' * 100_000 + '0' + ']' * 100_000 + '}'
+        payload = '{"metrics":{"mse":1},"details":' + '[' * 2_000 + '0' + ']' * 2_000 + '}'
+        # C decoder depth limits vary by platform. Exercise a real parser failure
+        # with the stdlib Python scanner and an explicit test-only recursion limit.
+        adapter = ("import json.scanner,runpy,sys\n"
+                   "runner = runpy.run_path(sys.argv.pop(1), run_name='runner_under_test')\n"
+                   "json.scanner.make_scanner = json.scanner.py_make_scanner\n"
+                   "sys.setrecursionlimit(500)\nraise SystemExit(runner['main']())\n")
+        def invoke_with_python_decoder(action, *args):
+            return subprocess.run([sys.executable, "-c", adapter, str(RUNNER), action,
+                                   "--project", str(self.project), *args],
+                                  capture_output=True, text=True, encoding="utf-8", timeout=30)
         evaluator = ("import sys\nfrom pathlib import Path\nprint('nested writer completed')\n"
                      f"Path(sys.argv[2]).write_text({payload!r}, encoding='utf-8')\n")
         self.commit_file("evaluate.py", evaluator)
         run_id = self.prepare("nested-result")
-        completed = subprocess.run([sys.executable, str(RUNNER), "run", "--project", str(self.project), "--id", run_id],
-                                   capture_output=True, text=True, encoding="utf-8", timeout=30)
+        completed = invoke_with_python_decoder("run", "--id", run_id)
         directory = self.run_path(run_id)
         stored = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual((completed.returncode, stored["status"], stored.get("exit_code")),
                          (1, "completed", 0), completed.stderr or completed.stdout)
         self.assertEqual(json.loads(completed.stdout), stored)
         self.assertEqual(stored["evidence"]["status"], "invalid")
+        self.assertIn("recursion", stored["evidence"]["reason"].lower())
         self.assertEqual((directory / "result.json").read_bytes(), payload.encode("utf-8"))
         self.assertIn("nested writer completed", (directory / "run.log").read_text(encoding="utf-8"))
         inspected = self.invoke("inspect", "--id", run_id, expected=0)
@@ -720,9 +730,11 @@ class RunnerTests(unittest.TestCase):
         configuration = {"checks": [], "required_runs": 0,
                          "result_fixture": f".research/runs/{run_id}/result.json"}
         (self.project / ".research/preflight.json").write_text(json.dumps(configuration), encoding="utf-8")
-        preflight = self.invoke("preflight", "--run-checks", expected=0)
+        checked = invoke_with_python_decoder("preflight", "--run-checks")
+        self.assertEqual(checked.returncode, 0, checked.stderr or checked.stdout)
+        preflight = json.loads(checked.stdout)
         self.assertFalse(preflight["ready"])
-        self.assertIn("Cannot read JSON", preflight["issue"])
+        self.assertIn("recursion", preflight["issue"].lower())
         latest = json.loads((self.project / ".research/preflight-latest.json").read_text(encoding="utf-8"))
         receipt = json.loads((self.project / ".research/records/entries" / (latest["record_id"] + ".json")).read_text(encoding="utf-8"))
         self.assertEqual(receipt["value"]["result"], preflight)
