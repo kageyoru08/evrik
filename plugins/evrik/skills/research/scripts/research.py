@@ -276,11 +276,11 @@ def archive_name(name: str) -> str:
     """Use portable relative names and reject ambiguous extraction targets."""
     path = PurePosixPath(name)
     parts = name.rstrip("/").split("/")
-    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
-                *(f"LPT{i}" for i in range(1, 10))}
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+                *(f"{prefix}{digit}" for prefix in ("COM", "LPT") for digit in "123456789¹²³")}
     if (not name or path.is_absolute() or any(part in {"", ".", ".."} for part in parts)
-            or any(any(char in part for char in '\\:*?"<>|\x00')
-                   or part.endswith((".", " ")) or part.split(".")[0].upper() in reserved
+            or any(any(char in '\\:*?"<>|' or ord(char) < 32 for char in part)
+                   or part.endswith((".", " ")) or part.split(".")[0].rstrip(" ").upper() in reserved
                    for part in parts)
             or parts[0].casefold() in {".git", ".research"}):
         raise ResearchError(f"Unsafe or nonportable snapshot path: {name!r}")
@@ -1058,13 +1058,19 @@ def execute(project: Path, storage: Path, run_id: str) -> dict:
         try:
             safe_path(storage, "runs", run_id, "result.json")
             manifest["evidence"] = result_evidence(result_path, protocol["metric"]["name"])
-        except ResearchError as exc:
+        except (ResearchError, OSError) as exc:
             manifest["evidence"] = {"status": "invalid", "reason": str(exc)}
     else:
         manifest["evidence"] = {"status": "invalid", "reason": "Execution did not complete successfully"}
-    if log_path.is_file():
+    try:
         safe_path(storage, "runs", run_id, "run.log")
-        manifest["log_sha256"] = file_digest(log_path)
+        if process is not None or path_exists(log_path):
+            manifest["log_sha256"] = file_digest(log_path)
+    except (ResearchError, OSError) as exc:
+        # Evidence access failures must not erase an already observed process exit.
+        manifest["log_error"] = str(exc)
+        if manifest["evidence"]["status"] == "valid":
+            manifest["evidence"] = {"status": "invalid", "reason": "Cannot verify execution log: " + str(exc)}
     atomic_json(safe_path(storage, "runs", run_id, "manifest.json"), manifest)
     return manifest
 
@@ -1663,8 +1669,10 @@ def evidence_captures(project: Path, directory: Path, activation: dict) -> tuple
         if "PreToolUse" not in phases or "PostToolUse" not in phases:
             continue
         pre, post = phases["PreToolUse"], phases["PostToolUse"]
-        if (pre[0]["status"] == "attempted" and post[0]["status"] == "captured_text"
-                and pre[0]["request_sha256"] == post[0]["request_sha256"]):
+        if pre[0]["status"] == "attempted" and post[0]["status"] == "captured_text":
+            if not (pre[0]["request_sha256"] == post[0]["request_sha256"]
+                    == digest(pre[0]["request"]) == digest(post[0]["request"])):
+                raise ResearchError("Public web capture request binding mismatch")
             references = [pre[2], post[2]]
             captures.append({"id": digest(references), "request": pre[0]["request"], "captured_at": post[1],
                              "receipts": references, "returned_text": post[0]["returned_text"]})
@@ -3136,14 +3144,15 @@ def preflight(project: Path, storage: Path, run_checks: bool = False) -> dict:
                 result["checks"].append({"name": check["name"], "status": "interrupted", "exit_code": None,
                                          "elapsed_seconds": time.monotonic() - started})
                 raise
+            checked = {"name": check["name"], "status": status, "exit_code": code,
+                       "elapsed_seconds": time.monotonic() - started}
+            result["checks"].append(checked)
             folder = safe_path(storage, "preflight-logs")
             folder.mkdir(exist_ok=True)
             path = safe_path(folder, uuid.uuid4().hex + ".log")
             with path.open("xb") as stream:
                 stream.write(output)
-            result["checks"].append({"name": check["name"], "status": status, "exit_code": code,
-                "elapsed_seconds": time.monotonic() - started, "log": path.relative_to(project).as_posix(),
-                "log_sha256": file_digest(path)})
+            checked.update(log=path.relative_to(project).as_posix(), log_sha256=file_digest(path))
         result["ready"] = (result["clean_tree"] and result["storage_ignored"] and result["budget_valid"]
                            and result.get("fixture", {"status": "valid"})["status"] == "valid"
                            and all(check["status"] == "passed" for check in result["checks"]))

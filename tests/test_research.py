@@ -740,6 +740,75 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(receipt["value"]["result"], preflight)
         self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 1)
 
+    def test_terminal_io_failure_preserves_completed_execution(self):
+        adapter = (
+            "import os,runpy,sys\nfrom pathlib import Path\n"
+            "runner,target,fault=sys.argv[1:4]\nsys.argv=[runner,*sys.argv[4:]]\n"
+            "code=runpy.run_path(runner,run_name='runner_under_test')\ntarget=Path(target)\n"
+            "original_stat,original_open=os.stat,Path.open\nhits=0\n"
+            "def failed_stat(path,*args,**kwargs):\n"
+            " global hits\n result=original_stat(path,*args,**kwargs)\n"
+            " if Path(path)==target:\n"
+            "  hits+=1\n  raise PermissionError('Injected terminal metadata failure')\n"
+            " return result\n"
+            "def failed_open(path,mode='r',*args,**kwargs):\n"
+            " global hits\n"
+            " if path==target and mode=='rb':\n"
+            "  hits+=1\n  raise PermissionError('Injected terminal log read failure')\n"
+            " return original_open(path,mode,*args,**kwargs)\n"
+            "if fault=='metadata': os.stat=failed_stat\nelse: Path.open=failed_open\n"
+            "try: raise SystemExit(code['main']())\n"
+            "finally: print('FAULT_HITS='+str(hits),file=sys.stderr)\n"
+        )
+        for fault, filename in (("metadata", "result.json"), ("read", "run.log")):
+            with self.subTest(fault=fault):
+                run_id = self.prepare(fault, "--replicate")
+                directory = self.run_path(run_id)
+                result = subprocess.run([sys.executable, "-c", adapter, str(RUNNER),
+                                         str(directory / filename), fault, "run", "--project", str(self.project),
+                                         "--id", run_id], capture_output=True, text=True, encoding="utf-8", timeout=30)
+                stored = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+                self.assertEqual((result.returncode, stored["status"], stored.get("exit_code")),
+                                 (1, "completed", 0), result.stderr or result.stdout)
+                self.assertIn("FAULT_HITS=1", result.stderr)
+                self.assertEqual(json.loads(result.stdout), stored)
+                self.assertEqual(stored["evidence"]["status"], "invalid")
+                self.assertIn("Injected terminal", stored["evidence"]["reason"])
+                if fault == "read":
+                    self.assertIn("Injected terminal", stored["log_error"])
+                original = {name: (directory / name).read_bytes() for name in ("result.json", "run.log", "manifest.json")}
+                inspected = self.invoke("inspect", "--id", run_id, expected=0)
+                self.assertTrue(inspected["launch_claimed"])
+                self.assertFalse(inspected["unresolved"])
+                self.invoke("run", "--id", run_id, expected=2)
+                self.assertEqual({name: (directory / name).read_bytes() for name in original}, original)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 2)
+
+    def test_preflight_log_failure_preserves_observed_check_exit(self):
+        from test_evidence_stream import r
+        storage = self.project / ".research"
+        r.atomic_json(storage / "preflight.json", {"checks": [{"name": "failing check", "command": [
+            "{python}", "-c", "print('preflight failed with seven'); raise SystemExit(7)"],
+            "timeout_seconds": 5}], "required_runs": 1, "result_fixture": None})
+        original_digest = r.file_digest
+
+        def fail_log_digest(path):
+            if path.parent == storage / "preflight-logs":
+                raise PermissionError("Injected preflight log read failure")
+            return original_digest(path)
+
+        with mock.patch.object(r, "file_digest", side_effect=fail_log_digest):
+            checked = r.preflight(self.project, storage, True)
+        self.assertFalse(checked["ready"])
+        self.assertIn("Injected preflight log", checked["issue"])
+        self.assertEqual(len(checked["checks"]), 1)
+        self.assertEqual((checked["checks"][0]["status"], checked["checks"][0]["exit_code"]), ("failed", 7))
+        self.assertEqual(r.record_entries(storage)[-1]["result"], checked)
+        log, = (storage / "preflight-logs").iterdir()
+        self.assertIn(b"preflight failed with seven", log.read_bytes())
+        self.invoke("prepare", "--label", "blocked", expected=2)
+        self.assertEqual(command(self.project, "inspect")["launch_claims_used"], 0)
+
     def test_metric_names_preserve_completion_and_require_valid_utf8(self):
         for name, expected in (("\ud800", 1), ("误差😀", 0)):
             with self.subTest(metric_name=ascii(name)):

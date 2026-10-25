@@ -226,6 +226,12 @@ The snapshot has no Git repository. The runner adds an explanatory `.git` bounda
 
 The primary metric must be present, and all values in `metrics` must be finite numbers. Treat missing or malformed results as invalid evidence even if the process returned zero. Run timeouts and failures remain part of the record. Integer-only arithmetic stays exact; floating-point comparisons use Python's binary floating-point arithmetic with no implicit tolerance. Mixed integer/float comparisons reject integers that are not exactly float-representable, and nonfinite arithmetic is rejected.
 
+If result or log inspection fails after the foreground process exits, retain its
+observed execution status and exit code with invalid evidence. Preflight also
+retains observed check exits when log capture fails, and remains not ready.
+Failure to publish the resulting manifest or receipt can still leave an
+unresolved record; an evidence error never authorizes another launch of that ID.
+
 When a protocol requires an exact nonzero process exit, preserve it through
 the execution wrapper. PowerShell `-Command` can turn a native nonzero exit
 into shell exit 1; use the authorized command followed immediately by

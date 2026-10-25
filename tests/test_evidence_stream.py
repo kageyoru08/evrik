@@ -245,6 +245,34 @@ class StreamEvidenceTests(unittest.TestCase):
         self.action("close", incomplete=True, reason="End synthetic fixture")
         self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
 
+    def test_inconsistent_web_receipt_bindings_cannot_disappear_from_source_obligations(self):
+        activation = self.action("activate", public_web=True, record="report.md")
+        request = {"search_query": [{"q": "synthetic public reference"}]}
+        self.calls += 1
+        self.assertEqual(self.hook("PreToolUse", request, name="webrun"), {})
+        self.assertEqual(self.hook("PostToolUse", request, "Synthetic public text", name="webrun"), {})
+        pre, = self.directory.glob("web-*-pre.json")
+        post, = self.directory.glob("web-*-post.json")
+        original_pre, original_post = pre.read_bytes(), post.read_bytes()
+        self.assertFalse(self.action("check")["sources"]["ready"])
+        for field, value in (("request_sha256", "f" * 64),
+                             ("request", {"search_query": [{"q": "different saved request"}]})):
+            with self.subTest(field=field):
+                pre.write_bytes(original_pre)
+                changed = r.evidence_read(pre)
+                changed[field] = value
+                # Model a saved-record binding fault with a valid outer envelope.
+                r.evidence_write(pre, changed)
+                preserved = pre.read_bytes()
+                state = r.evidence_session(self.project, self.directory, self.session)["activations"][-1]
+                with self.assertRaisesRegex(r.ResearchError, "capture request binding"):
+                    r.evidence_captures(self.project, self.directory, state)
+                self.assertFalse(self.action("check")["ready_to_close"])
+                with self.assertRaises(r.ResearchError):
+                    self.action("close")
+                self.assertEqual((pre.read_bytes(), post.read_bytes()), (preserved, original_post))
+        self.assertEqual(self.action("close", incomplete=True, reason="Preserve inconsistent saved receipts")["status"], "closed")
+
     def test_web_post_binding_failure_retains_pending_attempt_and_prevents_close(self):
         self.action("activate", public_web=True, record="report.md")
         request = {"search_query": [{"q": "synthetic public reference"}]}
