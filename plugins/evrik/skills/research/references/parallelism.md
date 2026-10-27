@@ -1,254 +1,116 @@
 # Peer meetings
 
-Use a meeting when requested or when competing explanations can materially
-change an authorized research decision. Keep ordinary direct work and bounded
-independent delegation available. An explicit meeting request needs reciprocal
-discussion; delegated summaries alone do not satisfy it. If native participation
-is unavailable, retain that limit and continue useful authorized work without
-claiming that a meeting occurred.
+Use a meeting when requested or when discussion of competing explanations can
+materially change an authorized research decision. Use subagents for participants.
+Ordinary delegation and independent review can proceed without a meeting. An
+explicit meeting requires evidence-specific discussion and responses; collecting
+summaries alone does not establish that discussion occurred.
 
 ## Establish the meeting
 
-Settle the question, hard constraints, available evidence and access, actual
-participants and addresses, file ownership, decision rule, and finite limits
-before exchanging conclusions. Apply the [multiagent model rule](../SKILL.md#tools-ownership-and-authorization)
-to every participant, including the facilitator: the roster must contain both
-Sol and Astra. Two participants means the facilitator and one peer, one from
-each family. Choose the smallest roster that covers the question's difficulty,
-independent subproblems and material uncertainties. Add a participant only for
-distinct useful analysis or verification, not to fill capacity or multiply votes.
-Choose supported effort per role: bounded routine checks may need low or medium
-effort; difficult reasoning, ambiguous evidence or consequential verification
-can justify higher effort. Briefly record the role, family and effort choices
-and why the headcount fits the task in the existing initial packet. Verify
-actual selection receipts before relying on the roster; prompts alone do not
-select a model. No particular connector, external consultation or Pro skill is
-required. Bound participants, activations, messages, tools, evaluations and time
-as applicable. Reserve capacity for final review and one revision.
+In the existing task brief or checkpoint, state the question, relevant evidence,
+work boundaries, participants, file ownership, decision rule and applicable
+budget. Use the smallest useful group. Follow the
+[model and review guidance](../SKILL.md#tools-ownership-and-authorization);
+verify model settings only when requested or relevant to an evidence claim.
+No extra packet, manifest or per-message bookkeeping is required if the existing
+record identifies the assignment and evidence clearly.
 
-[Stellar Colosseum, section 6](https://arxiv.org/html/2609.15983v2#S6)
-reports complementary errors and improved critique-based selection between two
-model runs on TCS-Bench. This motivates family diversity; it does not establish
-independent errors or an accuracy gain for Sol/Astra meetings. Preserve evidence,
-objections and task-specific verification instead of treating model diversity
-or agreement as proof of correctness.
+Give each subagent the relevant saved evidence and guidance paths before dependent
+work. Identify the exact revision being reviewed, using a commit, saved version
+or hash as appropriate. Preserve a participant's initial assessment, evidence
+and uncertainty before exposing it to others' conclusions when independent
+positions matter. Disclose inherited context rather than claiming unexposed
+judgment. Start independent work as inputs become ready and wait only for actual
+dependencies. If the question or decisive evidence changes, inform affected
+participants and revalidate their conclusions; do not silently mix revisions.
 
-Start independent work when its inputs and native capacity are ready. Check
-shared writes, tools and evaluation budgets as well as data dependencies. Review
-a ready contribution without waiting for unrelated work; wait for the full set
-only where the decision needs it. Use ordinary code for exact counting and
-deduplication, retaining failed or missing contributions. Final joint adoption
-still requires the complete roster's review of the same decision.
-
-Keep the shared question and initial packet stable during the independent
-first round. Participants may compute in parallel and preserve their initial
-positions in their own notes; wait for that round to finish before changing
-the shared discussion body. For each later review, keep the cited body fixed
-until the invited participant has responded. Before an attributed append,
-check the shared body against the version actually read as well as the
-author's own note prefix. If either changed, read the changed body completely
-and reassess the contribution; refreshing its hash alone is not a read.
-
-The facilitator is an equal substantive participant and the administrative
-record keeper. It saves its own initial judgment and accepts criticism. It
-cannot filter objections, overwrite another position, remove a dissenter,
-dismiss a disputed material blocker alone or declare an unreviewed decision
-joint. Every participant may request evidence, propose alternatives, revise a
-position and withhold adoption. Shared standing does not expand permission.
-
-Prefer one compact, identified initial task packet in the coordinator's existing
-note, with the common question and evidence, allowed work area, excluded
-operations, each peer's file ownership and remaining shared limits. Include
-available native selection receipts, without the facilitator's preliminary
-answer. Publish a pointer only after saving and reading the packet. Compute its
-length and SHA-256 from the saved bytes (for example, `Path.read_bytes()`),
-not an in-memory string or newline-normalized text. Bind those exact bytes
-to the configured roster. Before dependent work, each peer verifies that
-the packet it read matches that current association; a mismatch requires
-correction and verification before work resumes. Verify actual recipient
-read/response as below. Read-only actions still have to satisfy these boundaries.
-Include applicable entry prerequisites in order and the exact resolved absolute
-paths to SKILL.md and required references, not only a runner path. Put command
-result handling in that initial packet so it applies from the peer's first tool,
-before it has read any guidance. With exec_command, forward the complete returned
-object: `const r = await tools.exec_command(args); text(r);`. For a fulfilled
-Promise.allSettled entry, forward `entry.value`, not just `entry.value.output`;
-promise fulfillment does not mean the command exited successfully. Preserve the
-returned exit_code, session/chunk identity and output. Use those observed fields
-in failure notes; external-only placeholders are for metadata the tool did not
-return, not metadata discarded by a wrapper. Do not guess a process exit from
-error text or invent a native item ID or timestamp.
-Peers must finish required guidance in bounded reads before dependent scientific
-operations; do not batch those operations with unread guidance. If ordinary local
-guidance output is incomplete, read its missing required passages within the
-existing budget and access restrictions. This does not repair an earlier entry
-violation or authorize repeating source retrieval, evaluator or evidence-reader
-actions; honor explicit stops. Use fresh context where supported; disclose
-inherited exposure rather than claiming
-cognitive independence. Each participant preserves its initial position,
-supporting evidence and uncertainties before seeing others' conclusions. Keep
-author-owned notes append-only: retain every earlier entry and append corrections
-that identify the affected claim and supporting evidence. Prefer an end-of-file
-append operation for later entries. Any permitted writing method must put new
-material after the old end of file and verify that all prior bytes remain an
-unchanged prefix; combine the write and verification in one authorized operation
-where supported. Preserving an initial prefix alone does not preserve later
-entries. Before publishing an append subject to a hard size limit, check that its
-complete encoded suffix, including separators, fits the remaining space. A failed
-write may leave bytes behind: inspect current content and preserve those bytes as
-history. Never truncate or restore an earlier prefix to fit a limit; retain an
-incomplete result if a valid correction cannot fit.
-
-For a pre-existing append-only note, do not use a line-oriented patch, `Set-Content`,
-`WriteAllText`, or another decode-and-rewrite operation: it can normalize existing
-newline bytes. Use a binary append. Immediately before writing, require the current
-byte length and SHA-256 to equal the values observed after the last read; otherwise
-refuse without writing. With the designated single writer, open in binary append
-mode, write only the complete UTF-8 suffix, flush and close, then verify that the
-saved bytes equal the exact old prefix followed by the exact suffix. This compact
-standard-library pattern is an executable control; fill the four inputs from the
-current task rather than copying illustrative values:
-
-```python
-import hashlib, os
-from pathlib import Path
-
-path = Path(os.environ["APPEND_PATH"])
-expected_length = int(os.environ["APPEND_EXPECTED_LENGTH"])
-expected_sha256 = os.environ["APPEND_EXPECTED_SHA256"].lower()
-suffix = os.environ["APPEND_SUFFIX"].encode("utf-8")
-old = path.read_bytes()
-if len(old) != expected_length or hashlib.sha256(old).hexdigest() != expected_sha256:
-    raise SystemExit("stale append precondition; no bytes written")
-with path.open("ab") as stream:
-    stream.write(suffix)
-    stream.flush()
-    os.fsync(stream.fileno())
-saved = path.read_bytes()
-if saved[:expected_length] != old or saved[expected_length:] != suffix:
-    raise SystemExit("append verification failed; preserve current bytes as history")
-```
-
-Use one writer for the shared
-decision body, which may be revised subject to renewed review below; avoid
-unnecessary new records.
+For substantial changes, assign an independent reviewer subagent who is distinct
+from the owner and does not edit the owner's source. Keep that review tied to the
+exact revision, report Standards and Spec separately, and examine dependent claims.
+A participant's agreement is not a substitute for this review.
 
 ## Exchange evidence and objections
 
-Inspect the native declarations actually provided to each actor. Direct tools
-may be separate from a nested registry such as `ALL_TOOLS`; absence there does
-not prove direct absence. Use the declared schemas and invocation route, actual
-returned peer addresses and supported follow-up for idle participants. Do not
-guess a broadcast, resume or close API, inspect private capability caches, or
-assume that sending a message wakes an idle peer.
+Use available subagent communication tools and the returned participant IDs.
+Direct messages or facilitator relay are both suitable; preserve the author's
+meaning, evidence references and material objections, and identify relayed content.
+A send or notification alone does not prove that a recipient read or assessed it.
+An evidence-specific response establishes the contribution actually made.
 
-Prefer direct peer messages for evidence-specific questions, objections and
-responses. Before dispatch, save the complete material question, objection or
-response in the author's existing note with its evidence reference and an identity that
-later appends preserve. Complete and verify this save before dispatching the exact text or its
-identified pointer; do not run dependent save and send operations in parallel. Administrative notices need no duplicate substantive record. When using
-facilitator relay, record the workflow reason and any observed native limitation;
-keep unknown availability unknown. Carry the complete attributed content or its
-pointer and label the route as relay. The facilitator must not select or paraphrase away
-objections during transport. A successful send, saved note or notification alone
-does not prove consumption: the recipient must read the identified content and
-record an evidence-specific response tied to it. Distinguish observed native
-sends from shared-note consumption; saved content does not reveal an opaque
-message envelope. Reuse existing peers for subsequent turns; do not create a new
-user-facing task for every round or duplicate substantive dispatch.
+Discuss claims whose uncertainty or disagreement can change the decision. Ask
+for the consequence and supporting evidence or missing check, then record a
+correction, evidence-backed rebuttal or retained uncertainty. Agreement supported
+by evidence is valid; do not manufacture opposition or force a change of answer.
+Continue only while an unresolved material issue and remaining budget justify
+another exchange. No fixed number of rounds is required.
 
-Require a reciprocal critique/response cycle. Permit at most one additional
-cycle for a material unresolved issue within the entry budget. A useful
-objection names the claim or hard constraint, its material consequence, and
-supporting evidence or a concrete missing verification. Preference alone is
-not blocking. Agreement supported by evidence is valid; do not force opposition
-or an answer change to make the meeting appear useful.
-
-Resolve objections by correction, evidence-backed rebuttal or acknowledged
-uncertainty. Record the disposition and any retained dissent. Repeated objections
-refer to that disposition unless new evidence changes it. When materiality is
-disputed, the facilitator cannot dismiss it alone. Headcount cannot establish
-factual truth, override scientific acceptance or grant permission. A majority
-tie rule is usable only if agreed before positions are known and only between
-evidence-admissible options.
+The facilitator contributes analysis and synthesizes the result without filtering
+out dissent, rewriting others' positions or dismissing a disputed material blocker
+without addressing its evidence. Record unresolved objections and their affected
+claims. Keep progressing on independent authorized work. Headcount and model
+agreement do not establish factual truth or expand permissions.
 
 ## Adopt one saved decision
 
-Save a concise body containing the recommendation, decisive evidence identities,
-objection dispositions, remaining uncertainty and practical limits. Identify its
-exact revision/content, for example with the saved file's hash. Keep participants'
-responses in separate author-owned notes so they do not change the reviewed body.
+Save a concise recommendation with decisive evidence references, objection
+resolutions, remaining uncertainty and practical limits. One shared document
+with attributed responses is sufficient; assign a writer to avoid conflicting
+edits. Preserve the reviewed body or revision so later responses have a stable
+target. Do not rewrite that body merely to include its own review or closure.
 
-Every rostered participant, including the facilitator, independently reads that
-same actual body and relevant evidence and states:
+Before calling a decision jointly adopted, every named participant, including
+the facilitator, must review the same saved decision and relevant evidence and
+explicitly state whether its contribution is represented accurately and whether
+it accepts adoption under the agreed rule. Acceptance may retain a stated
+preference or dissent; do not label that unanimous belief. Silence, task completion
+or a facilitator's summary is not acceptance. Any alternative decision rule must
+be agreed before positions are known and cannot override evidence requirements.
 
-- whether its position and evidence are represented accurately;
-- whether it endorses the recommendation;
-- whether it accepts adoption under the agreed rule.
+A material change to the decision or decisive evidence requires renewed review
+by the participants whose adoption is claimed; a focused diff and affected evidence
+can suffice. Formatting-only edits do not restart substantive review. Preserve
+prior responses with their original revision and record corrections separately.
+Missing review, withheld acceptance or an unresolved material blocker leaves the
+joint decision provisional. If the owner makes a separately authorized decision,
+label it as the owner's decision and retain the dissent and review limits.
 
-Default joint adoption requires explicit acceptance by all participants.
-Representation acknowledgment alone is insufficient. A participant can accept
-an admissible option while preferring another: record joint adoption with dissent
-without calling it unanimous belief. No acceptance may be inferred from silence,
-task completion or a facilitator's summary.
-
-Any change to the body or its decisive evidence requires renewed review by
-everyone; a concise diff plus relevant evidence may suffice. Bind renewed responses
-to the current body and evidence identities. Missing
-or stale review, withheld adoption or an unresolved material blocker leaves the
-decision provisional or blocked when the finite budget ends. Do not restart
-rounds, replace dissenters or invent responses to manufacture agreement. A jointly
-accepted decision to defer can be a completed sound decision. Consensus never
-guarantees that every possible defect has been found.
+When a reviewer is unavailable, preserve the candidate and required review as
+pending. Record actual failures; do not replace a dissenting reviewer or repeat
+invitations to obtain a favorable result. Recovery can review the saved candidate
+without repeating experiments. The optional
+[record commands](evidence.md#version-working-records-and-recover-reviews)
+can bind a frozen packet and responses when that mechanism is useful or already
+in use; preserve its exact packet identity and existing obligations.
 
 ## Preserve evidence and close
 
-When final reviewers are unavailable, freeze the exact review packet and record
-each actual invitation failure or returned vote using the optional `record`
-commands in [evidence.md](evidence.md#version-working-records-and-recover-reviews).
-Bind replies to packet hash, actual actor identity and observed model selection;
-do not replace unavailable participants or spend another invitation without
-existing authorization and budget. Reconcile the native inventory with returned
-actor IDs before routing; a locally recorded `running` status is not proof of
-current liveness. Recovery reviews the preserved packet instead of repeating
-the experiment. A changed packet invalidates the previous current-scope review.
-Withdraw a vote through a new record and preserve its original bytes.
+Keep original contributions, first outcomes, failures, attribution, command
+status/exit and relevant limits in inspectable records. Preserve complete returned
+command metadata; a fulfilled tool promise does not mean the command succeeded.
+Correct errors separately rather than overwriting prior evidence. If a record is
+explicitly append-only, append bytes with a current length/hash precondition and
+verify that the existing prefix is unchanged; preserve any partial failed write.
+For an editable checkpoint, retain a recoverable prior version before replacing
+relevant historical text. Record material contributions and decisions, without
+duplicating every message into another file.
 
-Use the existing research records and applicable evidence, literature and
-experiment paths. Automatic source capture is limited to supported root sessions;
-peers inspect shared saved evidence, request omitted sources or use the documented
-native fallback for their own authorized retrieval. They must not impersonate
-the root or claim inherited automatic capture. Share one canonical evaluator
-ledger and total budget; parallel work does not create extra launches or retries.
+Follow the applicable evidence, literature and experiment procedures. Automatic
+source capture is limited to supported root sessions: peers inspect saved evidence
+or use the documented fallback for authorized retrieval, without claiming inherited
+native capture. Preserve missing capture or readback as incomplete; do not repeat
+retrieval to conceal it. Hash identity and meeting agreement do not grant native
+MATCH or scientific acceptance.
 
-Track attempted operations as they occur. At existing note or response updates,
-record compact participant subtotals by the applicable tool/category, including
-failed/rejected attempts and the current update. Count every underlying
-invocation once, including shell reads, every file patch, evidence commands,
-sends, follow-ups and waits. Count tools invoked by a wrapper without charging
-that wrapper again; a wrapper doing work without a nested tool counts once in
-its applicable category. Before more work, check the remaining assigned or
-verified shared allowance, keeping final review, a permitted revision and
-closure reserved. Unknown usage is not extra allowance. Combine related reads
-or concise attributed material items where permitted, preserving complete
-objections and responses; do not add a separate ledger or a bookkeeping call
-for every action. Reconcile subtotals against visible calls and returns before
-reporting a shared total. Mark incomplete count or timing coverage as unknown or
-qualified rather than guessing exact totals. Constrained budgets and the canonical
-launch ledger still apply.
-A normal wait timeout consumes its wait allowance and is not a failed send or
-proof that a peer failed. Continue only within the remaining shared time and
-permitted activations; never reset the deadline or blindly repeat an ambiguous
-substantive action. Retain missing participation and unresolved execution truthfully.
+Share the existing evaluator ledger and total budget. Delegation creates no extra
+launches, retries or time. Track usage required by explicit limits, including failed
+attempts; otherwise keep only accounting needed for the decision and do not invent
+exact totals. A wait timeout does not establish a failed send or failed participant.
+Retain uncertain execution and do not infer process termination from a completed
+conversation. Respect existing stops and authorization when resuming or cleaning up.
 
-Read the actual final saved body and participant responses after the last edit.
-Report scientific correctness, reciprocal influence, the route actually used,
-adoption and resource use separately. A correct answer cannot compensate for
-missing participation, and agreement cannot compensate for invalid evidence.
-Do not claim superiority or efficiency without an appropriate comparison.
-
-Account for each participant's actual turn and owned execution before closing.
-Completion, interruption and archival are distinct from process termination or
-released native capacity; preserve uncertainty where observation ends. When
-cleanup is authorized and the native app supports it, archive only known owned
-completed tasks, retaining evidence and pending participants.
+Read the saved decision and relevant responses after material corrections. Report
+the conclusion, actual participation, review/adoption status and unresolved limits.
+Stop when the question is resolved or the applicable limit is reached. Do not add
+closure rounds just to restate the outcome, and do not claim universal correctness,
+causal model gains or unmeasured savings.

@@ -69,9 +69,29 @@ Review the newly identified hooks in `/hooks`. Existing project `.research/` evi
 | Native evidence hooks | Explicit session capture on supported public web calls and exact saved-reader response matching |
 | Small regression example | A complete local baseline/candidate exercise with an isolated Git project |
 
-The skill uses available native tools without requiring a connector, external consultation, or another skill. Multi-agent delegation and peer meetings use the latest verified, natively available Sol or Astra versions for every participant, including coordinators and facilitators. Discussions and peer meetings must include both families: two participants means one Sol and one Astra, counting the facilitator. Choose headcount and supported effort according to difficulty, useful independent roles, risk and the shared budget. If either family is unavailable or unverified, retain that limitation and continue useful independent work without claiming a compliant mixed meeting or silently using an older version. Delegation is optional; a subagent does not automatically receive a Git worktree. Within the authorized scope and existing native permissions, proceed without repeated user confirmation.
+The skill follows current user instructions and applicable AGENTS.md guidance.
+Work solo by default and use subagents for useful independent delegation. Choose
+models and effort for the task's difficulty, risk and budget; verify settings when
+requested or used in an evidence claim, and preserve actual attribution. Specify
+each subagent's output, work boundary and file ownership. A subagent does not
+automatically receive a Git worktree. Proceed within existing authorization
+without repeated confirmation or requiring another connector or skill.
 
-For a requested collective decision, the [peer-meeting guidance](plugins/evrik/skills/research/references/parallelism.md) gives participants their own initial positions, reciprocal critique and explicit review of the same saved decision. The facilitator manages the record and routing with equal substantive standing. Direct native messages are preferred; a necessary relay preserves complete attributed content and is labeled. Unresolved material objections or missing acceptance leave a provisional or blocked result. These instructions add no scheduler or service, and consensus does not prove correctness or complete defect discovery.
+Changes affecting behavior, contracts, security, evidence integrity, acceptance
+decisions or instructions governing those obligations require an independent
+reviewer subagent distinct from the owner. The reviewer does not edit the owner's
+source, reviews the exact revision and dependent claims, and reports Standards
+and Spec separately. Spelling or formatting alone does not require this review.
+The owner resolves findings and verifies the result.
+
+For a requested collective decision, the [peer-meeting guidance](plugins/evrik/skills/research/references/parallelism.md)
+uses a short assignment, evidence-specific discussion and one saved decision.
+Keep initial assessments when independence matters, preserve objections and first
+outcomes, and require explicit acceptance of the reviewed revision by every named
+participant before claiming joint adoption. Missing acceptance leaves the joint
+decision provisional. Material changes require renewed review; routine formatting
+does not. No fixed round count or duplicate message ledger is required. Consensus
+does not prove correctness or complete defect discovery.
 
 For supported native root sessions, declare the report/checkpoint paths with
 `evidence activate`, use `--public-web --record CHECKPOINT` for authorized public
@@ -144,8 +164,10 @@ before filtering. There is no automatic Stop enforcement. The skill retains
 manual capture/readback fallbacks and an explicit incomplete close when a
 required native check is unavailable.
 
-For ongoing work, keep one active checkpoint and a compact manifest of original
-evidence paths, hashes, reviewed claims and limitations. Review changed claims
+For ongoing work, update one active checkpoint when status, decisions, risks or
+next actions change. Evidence paths, identities/hashes as needed, reviewed claims
+and limitations may live in that checkpoint; a separate manifest is optional.
+Preserve recoverable historical versions and original evidence. Review changed claims
 and their dependency impacts; inspect original evidence when a new use, changed
 binding or unresolved issue requires it. Do not copy whole ancestor checkpoints
 into each new report or reopen evidence solely to include its own close result.

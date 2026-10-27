@@ -27,18 +27,18 @@ authorized task requires it, and honor explicit project scope.
 For an explicit peer meeting, or a consequential authorized research choice
 where competing explanations can change the decision, read
 [references/parallelism.md](references/parallelism.md). Ordinary independent
-questions may still be delegated. Never call a decision jointly adopted
+questions may still be delegated to subagents. Never call a decision jointly adopted
 without every rostered participant's explicit review and acceptance of the
 current saved body under the agreed rule.
 
-Use one active checkpoint, one evidence manifest (a table in that checkpoint
-is sufficient), and the decision/review needed for the current question.
-The checkpoint holds current status, owner, next decision, unresolved gates,
-budget/attempt accounting and evidence pointers. Keep raw records immutable;
-before replacing historical text in a living checkpoint, preserve an exact
-version. Reference earlier evidence by path, hash, relevant claim, review
-identity and limitations instead of copying entire prior checkpoints or
-embedding their manifests recursively. Existing runner receipts remain primary.
+Use one active checkpoint and update it when status, decisions, risks or next
+actions change. Keep relevant evidence references there or in an existing
+manifest; a separate manifest is optional. Include the owner, unresolved
+obligations and applicable budget/attempt accounting. Keep raw records immutable
+and preserve a recoverable exact version before replacing relevant historical
+text. Reference evidence by path, identity/hash as needed, claim, review and
+limitations. Avoid copying entire prior checkpoints or adding closure records
+that do not help a decision or recovery. Existing runner receipts remain primary.
 
 Before reusing a reviewed claim, verify its source/input/protocol/comparator
 bindings and current dependencies. Review the changed claims and their effects
@@ -305,33 +305,18 @@ overrides continuation.
 ## Tools, ownership, and authorization
 
 Use tools actually available in Codex; require no particular connector or other
-skill. Solo work has no model-family restriction. In any multiagent delegation
-or meeting, every participant, including coordinators, facilitators, workers and
-critics, must use the latest version of Sol or Astra, verified against the current
-native model inventory and current official model information where needed.
-Do not rely on remembered versions or label sorting. Select eligible models and
-supported effort through native controls according to each participant's task
-difficulty, uncertainty, risk and cost. Every discussion or peer meeting must
-include both Sol and Astra, counting the coordinator or facilitator as a
-participant. A two-person discussion uses one of each; a larger roster retains
-both families and adds only independently useful roles. Size the roster and
-effort for the actual work within native capacity and the shared budget.
-If either family's latest version cannot be verified or is unavailable, retain
-the missing-family limitation and continue useful independent authorized work;
-do not present a single-family discussion as compliant or silently use an older
-version. Ordinary independent delegation may use either verified available
-family, but must not be used to relabel a discussion or joint decision.
-A successful supported native model-selection call and returned participant
-identity establish the configured choice, not backend model attestation. An
-already-selected participant, including a coordinator, may use a parent/host's
-actual native selection receipt bound to its own returned ID, model and effort;
-it need not select itself again. Retain the receipt's source; a role prompt or
-assumed default alone does not establish an eligible selection.
-An ineligible initiator may use a supported native route to an eligible coordinator
-only if it then ceases participating in that multiagent operation. Do not disguise
-participation as solo work. If no eligible native selection is available, retain
-that limitation and continue useful authorized solo work without claiming
-compliant multiagent participation.
+skill. Follow current user instructions and applicable AGENTS.md guidance.
+Choose models and supported effort for the task's difficulty, risk and budget.
+Verify model settings when explicitly requested or used to support an evidence
+claim. Do not claim settings or selection changes without observable evidence;
+configured selection is not backend attestation. Preserve historical attribution.
+
+Work solo by default. Delegate useful independent work to subagents within
+existing authorization, native capacity and the shared budget. Specify the
+evidence, expected output, work boundary and file ownership; review and integrate
+their results. Use isolated directories only when concurrent edits require them;
+subagents do not automatically get worktrees. An explicit peer meeting requires
+actual discussion as described in the parallelism reference.
 
 Use the smallest search, inspection, or test that resolves the current
 uncertainty. Reuse verified evidence while its inputs remain valid; broaden or
@@ -339,19 +324,18 @@ repeat work only for changed inputs, a failure, or an unresolved question.
 Keep full records in files and return relevant evidence without repeatedly
 loading or copying raw outputs into context.
 
-For a substantive change, prefer one owner and one independent reviewer when
-review is required; add research or another specialist only for a named
-uncertainty. A peer meeting remains a separate, explicitly defined workflow.
-If consecutive administrative tasks do not resolve a decision or advance a
-research gate, reassess the next action before adding another protocol or
-closure artifact. Report only measured overhead; a target is not a waiver of
-required evidence or permission to exceed a frozen run budget.
+Substantial changes require an independent reviewer subagent distinct from the
+owner who does not edit the owner's source. This includes changes to behavior,
+contracts, security, evidence integrity, acceptance decisions, or instructions
+governing those obligations; spelling or formatting alone does not qualify.
+Bind the review to the exact commit or saved revision, assess Standards and Spec
+separately, and check dependent claims. The owner resolves findings and verifies
+the result. Independent review does not require a meeting or collective adoption.
+If a required reviewer is unavailable, preserve the candidate and report review
+as pending while continuing independent authorized work.
 
-Delegate bounded independent questions when useful, specifying evidence,
-output, and file ownership. Keep task boundaries and routing independent of
-model/version. Explicitly assign isolated directories when concurrent edits
-require them; subagents do not automatically get worktrees. Review and integrate
-their evidence. File isolation does not grant permissions.
+Avoid administrative work that does not help a decision, verification or recovery.
+Report only measured overhead and keep frozen budgets and prior results intact.
 
 Keep existing host protections and approval boundaries authoritative. Do not
 reconfigure host/Git security or evade host checks or native refusals by changing
