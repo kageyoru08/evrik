@@ -4,6 +4,8 @@ This record preserves the qualified research behavior and its limits across the 
 
 The synchronous standard-library runner supports trusted foreground local Git experiments on Windows and Ubuntu with Python 3.11 and 3.14. The package supplies research guidance, exact source snapshots, conservative launch accounting, reconciliation and supported native source/evidence reading. It is not a security sandbox or durable process supervisor. Scientific acceptance remains separate from execution and evidence validity.
 
+Private historical maintenance records were redacted at the user's request on October 28, 2026 without retaining original copies. Historical observations below retain their original scope, but an affected record or archive no longer proves its original bytes or recorded digest. This editorial change provides no new runtime or scientific qualification.
+
 ## October 24 reader maintenance
 
 The October 24 maintenance adds the versioned `stream-v2` reader. Legacy
@@ -45,7 +47,7 @@ Single-artifact results also scaled with page count. Counts include snapshot
 and index creation; full check/close are separately measured and retain their
 complete evidence checks. These are logical operations, not physical I/O,
 model-token costs or a general bound on growing history and repeated checks.
-No Garlic experiment, training or scientific qualification was repeated.
+No training or scientific qualification was repeated.
 One fresh Windows native root task on CLI 0.164.0-alpha.11.1, requesting
 GPT-6.1 Sol at medium effort, exercised the indexed reader through trusted
 installed hooks: 4/4 pages MATCH, exhausted cursor, fresh check/close and null
@@ -68,7 +70,7 @@ The three-page fixture reduced metadata reads from 42 to 36 and writes from
 21 to 20. Initial descriptor creation remains an overhead. These host-specific
 instrumented timings exclude native process/model latency and do not establish
 universal speed or cost savings. All samples and original proof boundaries are
-retained in the external maintenance record; no Garlic experiment was repeated.
+retained in the external maintenance record.
 
 ### Descriptor batching
 
